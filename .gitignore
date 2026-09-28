@@ -1,0 +1,14 @@
+node_modules/
+.data/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+launch-video/out/
+
+# Private. The public repository has the code only.
+research
+launch-video
+docs/*
+!docs/screenshots/

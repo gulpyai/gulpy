@@ -1,0 +1,11 @@
+# Files that the host does not need.
+.data
+.env
+.env.*
+node_modules
+docs
+research
+test
+examples
+scripts
+*.log

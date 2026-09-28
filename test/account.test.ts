@@ -1,0 +1,181 @@
+/** The legal duties that the code must keep: consent, sign-in cookie, export, deletion, retention, HSTS. */
+import { beforeEach, describe, expect, test } from "bun:test";
+import { LEGAL } from "../src/brand.ts";
+import { cleanUp } from "../src/cleanup.ts";
+import { connectFirstTime, createWorld, field, GULPY, type Browser, type TestApp, type World } from "./harness.ts";
+
+const EMAIL = "skyler@example.com";
+const DAY = 24 * 60 * 60_000;
+
+let world: World;
+let browser: Browser;
+let inboxPilot: TestApp;
+
+beforeEach(async () => {
+  world = await createWorld();
+  browser = world.browser();
+  inboxPilot = world.registerApp("Inbox Pilot", "https://inboxpilot.test");
+});
+
+function userId(): string {
+  const user = world.gulpy.deps.store.userByEmail(EMAIL);
+  if (!user) throw new Error("No user");
+  return user.id;
+}
+
+/** Signs in with plain requests, and returns the Set-Cookie line of the session. */
+async function sessionCookie(remember: boolean): Promise<string> {
+  const extra: Record<string, string> = remember ? { remember: "1" } : {};
+  const post = (path: string, form: Record<string, string>, cookie = "") =>
+    world.gulpy.app.request(`${GULPY}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: GULPY,
+        "sec-fetch-site": "same-origin",
+        ...(cookie ? { cookie } : {}),
+      },
+      body: new URLSearchParams(form).toString(),
+    });
+  const start = await post("/auth/start", { email: EMAIL, next: "/", ...extra });
+  const binding = start.headers.getSetCookie().find((line) => line.startsWith("gulpy_signin="))?.split(";")[0] ?? "";
+  const html = await start.text();
+  const verify = await post(
+    "/auth/verify",
+    { email: EMAIL, next: "/", otp_id: field(html, "otp_id"), code: world.mailer.peek(EMAIL) ?? "", ...extra },
+    binding,
+  );
+  return verify.headers.getSetCookie().find((line) => line.startsWith("gulpy_session=")) ?? "";
+}
+
+describe("consent and the sign-in cookie", () => {
+  test("the sign-in form says that Continue means consent, with links to the rules", async () => {
+    const html = await (await world.gulpy.app.request(`${GULPY}/`)).text();
+    expect(html).toContain("When you sign in, you agree to the");
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain('href="/privacy"');
+    expect(html).toContain('name="remember"');
+  });
+
+  test("sign-in records the version of the rules and the time", async () => {
+    await browser.signIn(world, EMAIL);
+    const accepted = world.gulpy.deps.store.rulesAccepted(userId());
+    expect(accepted?.version).toBe(LEGAL.rulesVersion);
+    expect(accepted?.acceptedAt).toBe(world.gulpy.deps.now());
+  });
+
+  test("the session cookie stays only if the person asks for it", async () => {
+    // The harness browser drops the binding cookie here, so read the page flow through the real browser.
+    const page = await browser.open(`${GULPY}/auth/start`, { form: { email: EMAIL, next: "/", remember: "1" } });
+    expect(page.html).toContain('name="remember" value="1"');
+
+    const withRemember = world.gulpy.deps.store;
+    await browser.open(`${GULPY}/auth/verify`, {
+      form: { email: EMAIL, next: "/", otp_id: field(page.html, "otp_id"), code: world.mailer.peek(EMAIL) ?? "", remember: "1" },
+    });
+    const long = withRemember.db.query("SELECT created_at, expires_at FROM sessions").get() as { created_at: number; expires_at: number };
+    expect(long.expires_at - long.created_at).toBe(30 * DAY);
+
+    const other = world.browser();
+    await other.signIn(world, EMAIL);
+    const rows = withRemember.db.query("SELECT created_at, expires_at FROM sessions ORDER BY expires_at").all() as {
+      created_at: number;
+      expires_at: number;
+    }[];
+    expect((rows[0]?.expires_at ?? 0) - (rows[0]?.created_at ?? 0)).toBe(DAY);
+  });
+
+  test("without Keep me signed in, the cookie ends with the browser", async () => {
+    const short = await sessionCookie(false);
+    expect(short).toStartWith("gulpy_session=");
+    expect(short).not.toContain("Max-Age");
+    expect(await sessionCookie(true)).toContain(`Max-Age=${30 * 24 * 60 * 60}`);
+  });
+});
+
+describe("the approval window", () => {
+  test("it says where the data goes, with links to the rules", async () => {
+    const { startLink } = await import("./harness.ts");
+    const link = await startLink(world, inboxPilot, ["email.read"]);
+    await browser.signIn(world, EMAIL);
+    const page = await browser.open(link.url);
+    expect(page.html).toContain("A different company operates Inbox Pilot, with its own privacy policy.");
+    expect(page.html).toContain('href="/privacy"');
+  });
+});
+
+describe("export and deletion", () => {
+  test("the export has the data of the person and no token or secret", async () => {
+    await connectFirstTime(world, browser, inboxPilot, { email: EMAIL, capabilities: ["email.read"] });
+    const page = await browser.open(`${GULPY}/account/export`);
+    expect(page.status).toBe(200);
+    const data = JSON.parse(page.html);
+    expect(data.account.email).toBe(EMAIL);
+    expect(data.account.rulesVersion).toBe(LEGAL.rulesVersion);
+    expect(data.connections).toHaveLength(1);
+    expect(data.approvals[0].agent).toBe("Inbox Pilot");
+    expect(page.html).not.toMatch(/acme\.[A-Za-z0-9_-]{20,}\./);
+    expect(page.html).not.toContain("v1.");
+  });
+
+  test("deletion needs the email address, then deletes each row and cancels the tokens", async () => {
+    const token = await connectFirstTime(world, browser, inboxPilot, { email: EMAIL, capabilities: ["email.read"] });
+    const id = userId();
+    const form = await browser.open(`${GULPY}/account/delete`);
+    const csrf = field(form.html, "csrf");
+
+    const wrong = await browser.open(`${GULPY}/account/delete`, { form: { csrf, confirm: "other@example.com" } });
+    expect(wrong.status).toBe(400);
+    expect(world.gulpy.deps.store.userById(id)).not.toBeNull();
+
+    const done = await browser.open(`${GULPY}/account/delete`, { form: { csrf, confirm: EMAIL } });
+    expect(done.status).toBe(200);
+    expect(done.html).toContain("Your account is deleted");
+
+    const { db } = world.gulpy.deps.store;
+    for (const table of ["users", "sessions", "connections", "grants", "access_tokens", "audit_log", "otps"]) {
+      const { count } = db.query(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number };
+      expect({ table, count }).toEqual({ table, count: 0 });
+    }
+    expect(world.requests.some((line) => line.includes("/oauth/revoke"))).toBe(true);
+    expect(browser.hasCookie(GULPY, "gulpy_session")).toBe(false);
+    // The agent cannot call Gulpy now.
+    expect((await world.api("/email/messages", { token })).status).toBe(401);
+  });
+
+  test("deletion refuses a form from a different site", async () => {
+    await browser.signIn(world, EMAIL);
+    const form = await browser.open(`${GULPY}/account/delete`);
+    const page = await browser.open(`${GULPY}/account/delete`, {
+      form: { csrf: field(form.html, "csrf"), confirm: EMAIL },
+      from: "https://evil.test",
+    });
+    expect(page.status).toBe(403);
+    expect(world.gulpy.deps.store.userByEmail(EMAIL)).not.toBeNull();
+  });
+});
+
+describe("retention", () => {
+  test("cleanup deletes calls older than the limit and expired codes, and keeps new calls", async () => {
+    await browser.signIn(world, EMAIL);
+    const { store } = world.gulpy.deps;
+    const now = world.gulpy.deps.now();
+    const entry = { userId: userId(), appId: null, connectionId: null, action: "tool", detail: null, status: 200 };
+    store.audit({ ...entry, ts: now - (LEGAL.callLogDays + 1) * DAY });
+    store.audit({ ...entry, ts: now - DAY });
+    world.advance(2 * DAY);
+    cleanUp(world.gulpy.deps);
+    const calls = store.db.query("SELECT ts FROM audit_log").all();
+    expect(calls).toHaveLength(1);
+    expect(store.db.query("SELECT * FROM otps").all()).toHaveLength(0);
+  });
+});
+
+describe("transport", () => {
+  test("each response on the https address has HSTS", async () => {
+    for (const path of ["/", "/privacy", "/assets/gulpy.css", "/health"]) {
+      const response = await world.gulpy.app.request(`${GULPY}${path}`);
+      expect(response.headers.get("strict-transport-security")).toBe("max-age=31536000");
+    }
+  });
+});
