@@ -324,19 +324,21 @@ const PlanLine: FC<{ plan: PlanView; viewer: Viewer; now: number }> = ({ plan, v
         </span>
       )}
     </span>
-    {plan.plan === "free" ? (
-      <a class="btn btn-secondary btn-small" href={PRICING_URL}>
-        See the plans
-      </a>
-    ) : null}
-    {plan.manage && (
-      <form method="post" action="/billing/portal">
-        <Hidden viewer={viewer} />
-        <button class="btn btn-secondary btn-small" type="submit">
-          {plan.plan === "free" ? "Invoices" : "Manage plan"}
-        </button>
-      </form>
-    )}
+    <span class="plan-actions">
+      {plan.plan === "free" && (
+        <a class="btn btn-secondary btn-small" href={PRICING_URL}>
+          See the plans
+        </a>
+      )}
+      {plan.manage && (
+        <form method="post" action="/billing/portal">
+          <Hidden viewer={viewer} />
+          <button class="btn btn-secondary btn-small" type="submit">
+            {plan.plan === "free" ? "Invoices" : "Manage plan"}
+          </button>
+        </form>
+      )}
+    </span>
   </div>
 );
 

@@ -2331,8 +2331,10 @@ code,
   color: var(--ink);
 }
 
-.plan-line form {
-  display: inline;
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .account-actions {
