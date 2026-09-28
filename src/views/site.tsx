@@ -1,13 +1,14 @@
 import type { FC } from "hono/jsx";
 import type { Viewer } from "../auth.ts";
-import { BRAND } from "../brand.ts";
+import type { PlanView } from "../billing.ts";
+import { BRAND, PRICING_URL } from "../brand.ts";
 import { agentLogo, logoImage } from "../logos.ts";
 import { levelOf, type CapabilityId } from "../capabilities.ts";
 import type { CatalogGroup, ConnectionView } from "../present.ts";
 import type { App, AuditEntry } from "../store.ts";
 import { CatalogGrid } from "./catalog.tsx";
 import { SignInForm, type SignInState } from "./signin.tsx";
-import { Avatar, ConnectorIcon, Icon, Mascot, Notice, SitePage, timeAgo, type Logo, type PageMeta } from "./ui.tsx";
+import { Avatar, ConnectorIcon, formatDate, Icon, Mascot, Notice, SitePage, timeAgo, type Logo, type PageMeta } from "./ui.tsx";
 
 export interface LandingModel {
   state: SignInState;
@@ -259,6 +260,8 @@ export interface DashboardModel {
   calls: number;
   now: number;
   notice?: { kind: "ok" | "warn"; text: string };
+  /** The plan of the person. Undefined where this Gulpy sells no plans. */
+  plan?: PlanView;
 }
 
 const ACTIONS: Record<string, string> = {
@@ -273,6 +276,7 @@ const ACTIONS: Record<string, string> = {
   "calendar.write": "Changed calendar",
   tool: "Used",
   proxy: "API request",
+  "plan.change": "Changed the plan",
 };
 
 const Hidden: FC<{ viewer: Viewer }> = ({ viewer }) => <input type="hidden" name="csrf" value={viewer.csrf} />;
@@ -305,6 +309,36 @@ const GUIDES = [
     steps: ["Open grok.com/connectors.", "Select New Connector, then Custom.", "Paste the address and sign in."],
   },
 ] as const;
+
+/** The plan of the person, with the way to change it. */
+const PlanLine: FC<{ plan: PlanView; viewer: Viewer; now: number }> = ({ plan, viewer }) => (
+  <div class="plan-line">
+    <span>
+      Plan: <strong>{plan.name}</strong>
+      {plan.plan !== "free" && plan.interval && <span class="muted"> · Billed {plan.interval}</span>}
+      {plan.plan === "business" && plan.quantity > 1 && <span class="muted"> · {plan.quantity} users</span>}
+      {plan.periodEnd && (
+        <span class="muted">
+          {" "}
+          · {plan.ends ? "Ends" : "Renews"} {formatDate(plan.periodEnd)}
+        </span>
+      )}
+    </span>
+    {plan.plan === "free" ? (
+      <a class="btn btn-secondary btn-small" href={PRICING_URL}>
+        See the plans
+      </a>
+    ) : null}
+    {plan.manage && (
+      <form method="post" action="/billing/portal">
+        <Hidden viewer={viewer} />
+        <button class="btn btn-secondary btn-small" type="submit">
+          {plan.plan === "free" ? "Invoices" : "Manage plan"}
+        </button>
+      </form>
+    )}
+  </div>
+);
 
 const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
   <section class="panel guide">
@@ -535,6 +569,7 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
             </p>
           </div>
         </div>
+        {model.plan && <PlanLine plan={model.plan} viewer={viewer} now={model.now} />}
         <div class="account-actions">
           <a class="btn btn-secondary" href="/account/export">
             Download my data

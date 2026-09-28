@@ -203,6 +203,22 @@ All paths start with `/v1`. Errors have the shape `{ "error": { "code", "message
 | `GULPY_DB` | `.data/gulpy.db` | The SQLite file |
 | `RESEND_API_KEY`, `MAIL_FROM` | not set | Sends sign-in codes by email. Necessary in production. |
 | `GULPY_RAW_PROXY` | none | Provider ids for which `/v1/proxy` is on. Keep Google and Microsoft out. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | not set | Paid plans through Stripe. See [Paid plans](#paid-plans). Without them, each person is on Free. |
+
+In development on macOS, each secret can also sit in the Keychain: `gulpy-stripe-secret-key`, `gulpy-stripe-webhook-secret`, and the same pattern for the provider credentials.
+
+## Paid plans
+
+Gulpy sells the plans Personal, Family and Business through Stripe. The products, the prices and the payment links live in Stripe; the `stripe` script of the marketing site makes them. Gulpy needs only the secret key and the signing secret of one webhook endpoint at `<GULPY_BASE_URL>/stripe/webhook`, with the events `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted`.
+
+| Address | What it does |
+|---|---|
+| `GET /billing/checkout?plan=personal&interval=yearly` | Sends the signed-in person to the Stripe checkout of the plan. The link carries the user id, so the payment lands on this account. The pricing page of the site links here. |
+| `POST /stripe/webhook` | Stripe reports each payment and each change of a subscription. Gulpy checks the signature and writes the plan of the person into the `subscriptions` table. |
+| `GET /?checkout=<session id>` | Where Stripe sends the person after payment. Gulpy reads the session and shows the plan at once. |
+| `POST /billing/portal` | Opens the Stripe customer portal: cancel, change the plan or the number of users, change the card, see invoices. |
+
+What a plan changes: a person on Free keeps 7 days of calls in the activity list; a paid plan keeps `LEGAL.callLogDays`. The dashboard shows the plan under Your account, and the export has it. With no Stripe settings, all of this is off and Gulpy shows no plan.
 
 ## Security model
 
@@ -256,7 +272,8 @@ src/
   link.ts           Link: tokens, account choices, approval
   oauth.ts          sign-in at a provider that has its own API
   providers/        google.ts, microsoft.ts
-  routes/           pages.tsx, info.tsx (support, security, privacy, terms), oauth.ts, mcp.ts, api.ts
+  routes/           pages.tsx, info.tsx (support, security, privacy, terms), oauth.ts, mcp.ts, api.ts, billing.ts (the Stripe webhook)
+  billing.ts        paid plans: the Stripe checkout, the webhook events, the customer portal
   views/            the pages
 examples/
   agent/            Orbit and Scout. They think with the `claude` command.
@@ -315,6 +332,7 @@ all your connections there.
    safe place. Without it, the stored tokens cannot be read.
 4. Set `RESEND_API_KEY` and `MAIL_FROM`, so that the sign-in codes go out by email.
 5. Start it with `bun run start`, or build the `Dockerfile`.
+6. Optional: sell plans. See [Paid plans](#paid-plans). Without it, everybody is on Free.
 
 ## Security
 

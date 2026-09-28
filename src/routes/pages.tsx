@@ -12,6 +12,7 @@ import {
   verifyCode,
   viewer,
 } from "../auth.ts";
+import { billingOn, checkoutUrl, completeCheckout, isInterval, isPlan, planOf, portalUrl } from "../billing.ts";
 import { BRAND, LEGAL } from "../brand.ts";
 import { isLocalAddress } from "../config.ts";
 import { randomId, randomToken, sha256 } from "../crypto.ts";
@@ -57,6 +58,8 @@ const NOTICES: Record<string, string> = {
   exchange_failed: "The provider did not complete the sign-in. Try again.",
   nothing_selected: "Select one or more connections.",
   setup_needed: "This connector needs an app that the operator registers at the provider first.",
+  payment_pending: "Gulpy could not confirm the payment yet. If you paid, the plan shows in a minute.",
+  no_plan: "That plan is not for sale yet.",
 };
 
 /**
@@ -69,6 +72,7 @@ const OK_NOTICES: Record<string, string> = {
   connected: "The connection is added.",
   removed: "The connection is removed. The tokens are deleted.",
   revoked: "The agent does not have access now.",
+  paid: "Thank you. Your plan is active.",
 };
 
 /** The request of an agent, as it arrives at the authorize endpoint. */
@@ -457,9 +461,24 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
 
   // Dashboard
 
-  app.get("/", (c) => {
+  app.get("/", async (c) => {
     const current = viewer(deps, c);
-    if (!current) return render(c, <Landing model={landing({ next: "/" })} />);
+    // A page that needs a sign-in, for example the checkout, sends the person here with `next`.
+    if (!current) return render(c, <Landing model={landing({ next: safeNext(c.req.query("next"), "/") })} />);
+
+    // Back from the Stripe checkout page: read the session, so the plan shows at once.
+    const checkout = c.req.query("checkout");
+    if (checkout !== undefined) {
+      let done = false;
+      if (billingOn(deps)) {
+        try {
+          done = await completeCheckout(deps, current.user, checkout);
+        } catch (error) {
+          console.error("[gulpy] checkout session", error);
+        }
+      }
+      return c.redirect(done ? "/?ok=paid" : "/?notice=payment_pending", 303);
+    }
 
     const connections = viewConnections(deps, current.user.id);
     const byId = new Map(connections.map((view) => [view.connection.id, view]));
@@ -493,8 +512,33 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       calls: deps.store.countCalls(current.user.id, now - 7 * 24 * 60 * 60_000),
       now,
       notice: okText ? { kind: "ok", text: okText } : warnText ? { kind: "warn", text: warnText } : undefined,
+      plan: billingOn(deps) ? planOf(deps, current.user.id) : undefined,
     };
     return render(c, <Dashboard viewer={current} model={model} />);
+  });
+
+  // Paid plans. The webhook is in routes/billing.ts.
+
+  app.get("/billing/checkout", async (c) => {
+    if (!billingOn(deps)) return c.text("Payments are not set up", 404);
+    const plan = c.req.query("plan");
+    const interval = c.req.query("interval") ?? "yearly";
+    if (!isPlan(plan) || !isInterval(interval)) return c.text("Unknown plan", 400);
+    const current = viewer(deps, c);
+    if (!current) return c.redirect(withParam("/", "next", `/billing/checkout?plan=${plan}&interval=${interval}`), 303);
+    const url = await checkoutUrl(deps, current.user, plan, interval);
+    if (!url) return c.redirect("/?notice=no_plan", 303);
+    return c.redirect(url, 303);
+  });
+
+  app.post("/billing/portal", async (c) => {
+    if (!billingOn(deps)) return c.text("Payments are not set up", 404);
+    const form = await c.req.parseBody();
+    const current = viewer(deps, c);
+    if (!current || !checkCsrf(current, form.csrf)) return c.text("Sign in again", 403);
+    const subscription = deps.store.subscription(current.user.id);
+    if (!subscription) return c.redirect("/#account", 303);
+    return c.redirect(await portalUrl(deps, subscription.customerId, `${deps.config.baseUrl}/#account`), 303);
   });
 
   app.post("/connections/:id/remove", async (c) => {

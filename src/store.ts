@@ -192,13 +192,50 @@ const SCHEMA_V5 = `
 DROP TABLE IF EXISTS site_logins;
 `;
 
+/** The paid plan of each person, from Stripe. One row for each person; one Stripe customer for each row. */
+const SCHEMA_V6 = `
+CREATE TABLE subscriptions (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  customer_id TEXT NOT NULL UNIQUE,
+  subscription_id TEXT,
+  plan TEXT NOT NULL,
+  status TEXT NOT NULL,
+  interval TEXT,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  period_end INTEGER,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+`;
+
 /** Each entry runs one time, in order. Add a new entry for each schema change. */
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6];
 
 export interface User {
   id: string;
   email: string;
   createdAt: number;
+}
+
+export type PaidPlan = "personal" | "family" | "business";
+
+/** The Stripe statuses in which the person has the plan. `past_due`: the card failed, Stripe tries again. */
+export const ACTIVE_STATUSES: readonly string[] = ["active", "trialing", "past_due"];
+
+export interface Subscription {
+  userId: string;
+  customerId: string;
+  subscriptionId: string | null;
+  plan: PaidPlan;
+  /** A Stripe status: active, trialing, past_due, canceled, unpaid, incomplete, paused. */
+  status: string;
+  interval: "monthly" | "yearly" | null;
+  /** The number of users on Business. */
+  quantity: number;
+  /** The end of the paid period, in ms. */
+  periodEnd: number | null;
+  cancelAtPeriodEnd: boolean;
+  updatedAt: number;
 }
 
 export interface Session {
@@ -444,6 +481,21 @@ function toAudit(row: Row): AuditEntry {
   };
 }
 
+function toSubscription(row: Row): Subscription {
+  return {
+    userId: String(row.user_id),
+    customerId: String(row.customer_id),
+    subscriptionId: row.subscription_id === null ? null : String(row.subscription_id),
+    plan: String(row.plan) as PaidPlan,
+    status: String(row.status),
+    interval: row.interval === null ? null : (String(row.interval) as "monthly" | "yearly"),
+    quantity: Number(row.quantity),
+    periodEnd: row.period_end === null ? null : Number(row.period_end),
+    cancelAtPeriodEnd: Number(row.cancel_at_period_end) === 1,
+    updatedAt: Number(row.updated_at),
+  };
+}
+
 export function openDatabase(path: string): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true });
@@ -545,6 +597,7 @@ export class Store {
       "SELECT ts, app_id, connection_id, action, detail, status FROM audit_log WHERE user_id = ? ORDER BY ts",
       userId,
     );
+    const subscription = this.subscription(userId);
     const time = (value: unknown) => (value === null || value === undefined ? null : new Date(Number(value)).toISOString());
     return {
       account: {
@@ -553,6 +606,18 @@ export class Store {
         rulesVersion: rules?.version ?? null,
         rulesAccepted: time(rules?.acceptedAt),
       },
+      plan: subscription
+        ? {
+            plan: subscription.plan,
+            status: subscription.status,
+            interval: subscription.interval,
+            users: subscription.quantity,
+            periodEnd: time(subscription.periodEnd),
+            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+            stripeCustomer: subscription.customerId,
+            updated: time(subscription.updatedAt),
+          }
+        : null,
       connections: connections.map((row) => ({
         id: row.id,
         provider: row.provider,
@@ -592,9 +657,10 @@ export class Store {
 
   /**
    * Deletes the rows that are not necessary now: expired codes, sessions and
-   * tokens, and calls older than `callsBefore`. Returns the number of rows.
+   * tokens, and calls older than `callsBefore`. With `freeCallsBefore`, the calls of
+   * the people with no paid plan go earlier. Returns the number of rows.
    */
-  prune(now: number, callsBefore: number): number {
+  prune(now: number, callsBefore: number, freeCallsBefore = callsBefore): number {
     const day = 24 * 60 * 60_000;
     const month = 30 * day;
     let count = 0;
@@ -616,8 +682,52 @@ export class Store {
         now - month,
       );
       count += this.run("DELETE FROM audit_log WHERE ts < ?", callsBefore);
+      if (freeCallsBefore > callsBefore) {
+        count += this.run(
+          `DELETE FROM audit_log WHERE ts < ? AND user_id NOT IN
+             (SELECT user_id FROM subscriptions WHERE status IN (${ACTIVE_STATUSES.map(() => "?").join(", ")}))`,
+          freeCallsBefore,
+          ...ACTIVE_STATUSES,
+        );
+      }
     })();
     return count;
+  }
+
+  // Paid plans
+
+  subscription(userId: string): Subscription | null {
+    const row = this.one("SELECT * FROM subscriptions WHERE user_id = ?", userId);
+    return row ? toSubscription(row) : null;
+  }
+
+  subscriptionByCustomer(customerId: string): Subscription | null {
+    const row = this.one("SELECT * FROM subscriptions WHERE customer_id = ?", customerId);
+    return row ? toSubscription(row) : null;
+  }
+
+  /** One row for each person. A Stripe customer that moved to another person leaves the old row. */
+  saveSubscription(sub: Subscription): void {
+    this.db.transaction(() => {
+      this.run("DELETE FROM subscriptions WHERE customer_id = ? AND user_id <> ?", sub.customerId, sub.userId);
+      this.run(
+        `INSERT INTO subscriptions (user_id, customer_id, subscription_id, plan, status, interval, quantity, period_end, cancel_at_period_end, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET customer_id = excluded.customer_id, subscription_id = excluded.subscription_id,
+           plan = excluded.plan, status = excluded.status, interval = excluded.interval, quantity = excluded.quantity,
+           period_end = excluded.period_end, cancel_at_period_end = excluded.cancel_at_period_end, updated_at = excluded.updated_at`,
+        sub.userId,
+        sub.customerId,
+        sub.subscriptionId,
+        sub.plan,
+        sub.status,
+        sub.interval,
+        sub.quantity,
+        sub.periodEnd,
+        sub.cancelAtPeriodEnd ? 1 : 0,
+        sub.updatedAt,
+      );
+    })();
   }
 
   createSession(idHash: string, userId: string, csrf: string, now: number, expiresAt: number): void {

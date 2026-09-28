@@ -8,7 +8,7 @@ import { createMockProvider, type MockProvider } from "./fixtures/mail-provider/
 import { codeTools, notesTools, tasksTools } from "./fixtures/mcp-connector/connectors.ts";
 import { createMockMcp, type MockMcp } from "./fixtures/mcp-connector/server.tsx";
 import { createApp, createDeps, type GulpyApp } from "../src/app.ts";
-import type { Config } from "../src/config.ts";
+import type { Config, StripeConfig } from "../src/config.ts";
 import { randomToken, sha256 } from "../src/crypto.ts";
 import { ConsoleMailer } from "../src/mailer.ts";
 
@@ -48,7 +48,16 @@ export interface World {
   api(path: string, init?: { method?: string; token?: string; body?: unknown }): Promise<{ status: number; body: any }>;
 }
 
-export async function createWorld(options: { accessTtlSeconds?: number; rawProxy?: string[] } = {}): Promise<World> {
+export async function createWorld(
+  options: {
+    accessTtlSeconds?: number;
+    rawProxy?: string[];
+    /** Turns the paid plans on. */
+    stripe?: StripeConfig;
+    /** Other servers of the test, by origin. For example a Stripe for the tests. */
+    origins?: Record<string, { fetch(request: Request): Response | Promise<Response> }>;
+  } = {},
+): Promise<World> {
   let clock = Date.parse("2026-09-27T12:00:00Z");
   const now = () => clock;
   const requests: string[] = [];
@@ -66,6 +75,7 @@ export async function createWorld(options: { accessTtlSeconds?: number; rawProxy
       { id: "acme-code", name: "Acme Code", description: "Demo code", color: "24292F", url: `${CODE}/mcp` },
     ],
     connectorClients: {},
+    stripe: options.stripe,
   };
 
   // A mail provider and MCP connectors for the tests. The product has none of them.
@@ -117,6 +127,8 @@ export async function createWorld(options: { accessTtlSeconds?: number; rawProxy
     if (url.origin === GULPY && gulpy) return gulpy.app.fetch(request);
     const connector = connectors[url.origin];
     if (connector) return connector.app.fetch(request);
+    const extra = options.origins?.[url.origin];
+    if (extra) return extra.fetch(request);
     const document = documents.get(url.origin + url.pathname);
     if (document !== undefined) return Response.json(document);
     if ([...documents.keys()].some((address) => address.startsWith(url.origin))) return new Response("Not found", { status: 404 });

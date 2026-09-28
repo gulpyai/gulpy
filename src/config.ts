@@ -8,6 +8,14 @@ export interface ProviderCredentials {
   clientSecret: string;
 }
 
+/** Paid plans through Stripe. Without it, Gulpy sells nothing: each person is on Free. */
+export interface StripeConfig {
+  /** `sk_test_...` or `sk_live_...` */
+  secretKey: string;
+  /** `whsec_...`, the signing secret of the webhook endpoint `<GULPY_BASE_URL>/stripe/webhook`. */
+  webhookSecret: string;
+}
+
 export interface Config {
   env: Env;
   port: number;
@@ -31,6 +39,7 @@ export interface Config {
    * automatic registration, by connector id. For example `github`.
    */
   connectorClients: Record<string, ProviderCredentials>;
+  stripe?: StripeConfig;
 }
 
 /** Connectors that need an OAuth app that the operator registers by hand. */
@@ -91,6 +100,12 @@ function credentials(env: Env, name: "GOOGLE" | "MICROSOFT"): ProviderCredential
   return clientId && clientSecret ? { clientId, clientSecret } : undefined;
 }
 
+function stripeConfig(env: Env): StripeConfig | undefined {
+  const secretKey = secret(env, "STRIPE_SECRET_KEY", "gulpy-stripe-secret-key");
+  const webhookSecret = secret(env, "STRIPE_WEBHOOK_SECRET", "gulpy-stripe-webhook-secret");
+  return secretKey && webhookSecret ? { secretKey, webhookSecret } : undefined;
+}
+
 function connectorClients(env: Env): Record<string, ProviderCredentials> {
   const clients: Record<string, ProviderCredentials> = {};
   for (const id of STATIC_CONNECTORS) {
@@ -128,5 +143,6 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
         .filter(Boolean),
     customConnectors: overrides.customConnectors ?? [],
     connectorClients: overrides.connectorClients ?? connectorClients(env),
+    stripe: overrides.stripe ?? stripeConfig(env),
   };
 }
