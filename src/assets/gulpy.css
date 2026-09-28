@@ -2319,7 +2319,7 @@ code,
   align-items: center;
   justify-content: space-between;
   gap: 10px 16px;
-  margin: 0 0 14px;
+  margin: 14px 22px 0;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
