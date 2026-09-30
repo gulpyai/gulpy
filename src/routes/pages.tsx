@@ -25,6 +25,7 @@ import {
 import {
   agentAllowed,
   billingOn,
+  cancelPlan,
   checkoutUrl,
   completeCheckout,
   FREE_AGENTS,
@@ -34,7 +35,7 @@ import {
   portalUrl,
   unlimited,
 } from "../billing.ts";
-import { BRAND, LEGAL } from "../brand.ts";
+import { BRAND, CONTACT, LEGAL } from "../brand.ts";
 import { AREAS, type AccessLevel, type AreaId } from "../capabilities.ts";
 import { isLocalAddress } from "../config.ts";
 import { randomId, randomToken, sha256 } from "../crypto.ts";
@@ -112,7 +113,7 @@ const AUTHORIZE_PARAMS = [
   "scope",
 ];
 
-function render(c: Context, page: Child, status: 200 | 400 | 403 | 404 = 200): Response {
+function render(c: Context, page: Child, status: 200 | 400 | 403 | 404 | 502 = 200): Response {
   return c.html(`<!DOCTYPE html>${String(page)}`, status);
 }
 
@@ -735,7 +736,18 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     if (normalizeEmail(String(form.confirm ?? "")) !== current.user.email) {
       return render(c, <DeleteAccount viewer={current} error="The email address is not the same. Type it again." />, 400);
     }
-    // Cancel each token at the provider first. A provider that does not answer does not stop the deletion.
+    // Stop the paid plan first, so a deleted account is never charged again. If Stripe does not answer, stop here.
+    if (!(await cancelPlan(deps, current.user.id))) {
+      return render(
+        c,
+        <DeleteAccount
+          viewer={current}
+          error={`${BRAND.name} could not cancel your paid plan. Nothing was deleted. Try again in a minute, or write to ${CONTACT.support}.`}
+        />,
+        502,
+      );
+    }
+    // Cancel each token at the provider. A provider that does not answer does not stop the deletion.
     for (const connection of deps.store.connectionsByUser(current.user.id)) {
       const backend = backendOf(deps, connection);
       if (!backend) continue;

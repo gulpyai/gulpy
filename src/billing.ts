@@ -164,7 +164,7 @@ function idOf(value: string | { id: string } | null | undefined): string | null 
   return typeof value === "string" ? value : value.id;
 }
 
-async function stripe<T>(deps: Deps, method: "GET" | "POST", path: string, params: Record<string, string> = {}): Promise<T> {
+async function stripe<T>(deps: Deps, method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string> = {}): Promise<T> {
   const key = deps.config.stripe?.secretKey;
   if (!key) throw new Error("Stripe is not set up");
   const query = new URLSearchParams(params).toString();
@@ -208,6 +208,22 @@ export async function checkoutUrl(deps: Deps, user: User, plan: PaidPlan, interv
   url.searchParams.set("client_reference_id", user.id);
   url.searchParams.set("prefilled_email", user.email);
   return url.toString();
+}
+
+/**
+ * Stops the paid plan of a person now, with no more charges. For the deletion of an account.
+ * True when there is nothing to stop, or Stripe stopped it.
+ */
+export async function cancelPlan(deps: Deps, userId: string): Promise<boolean> {
+  const subscription = deps.store.subscription(userId);
+  if (!billingOn(deps) || !subscription?.subscriptionId || !isPaid(subscription)) return true;
+  try {
+    await stripe(deps, "DELETE", `/subscriptions/${subscription.subscriptionId}`);
+    return true;
+  } catch (error) {
+    console.error("[gulpy] cancel during account deletion failed", error);
+    return false;
+  }
 }
 
 /** The address of the Stripe customer portal, where the person cancels, changes the plan or the card. */

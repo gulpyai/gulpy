@@ -102,7 +102,7 @@ const QUESTIONS: { q: string; a: Child }[] = [
     q: "How do I delete my account?",
     a: (
       <>
-        Open <a href="/#account">My tools, then Your account</a>, and select <strong>Delete my account</strong>.{" "}
+        Open <a href="/#account">My tools, then Account</a>, and select <strong>Delete my account</strong>.{" "}
         {BRAND.name} deletes the account, the connections, the tokens and the list of calls.
       </>
     ),
@@ -202,17 +202,20 @@ export const Security: FC<{ model: InfoModel }> = ({ model }) => (
           <strong>You sign in at the provider.</strong> {BRAND.name} does not see or keep the password of a tool.
         </li>
         <li>
-          <strong>You approve each agent.</strong> You select the tools, and Read only or Read and write.
+          <strong>You choose what each agent can do.</strong> Off, Read only, or Read and write, for each tool. An
+          agent that connects with "Connect to {BRAND.name}" starts with Read and write on all your tools; you can
+          change that in Agents.
         </li>
         <li>
-          <strong>You see each call.</strong> The list shows the agent, the tool and the time. It does not keep the
-          content.
+          <strong>On Pro, you see each call.</strong> The Activity tab shows the agent, the tool and the time. It does
+          not keep the content.
         </li>
         <li>
           <strong>You can stop access immediately.</strong> Remove an agent or a tool on the page My tools.
         </li>
         <li>
-          <strong>Agents use standard sign-in.</strong> OAuth 2.1 with PKCE. Access tokens stop working after 1 hour.
+          <strong>Agents use standard sign-in.</strong> OAuth 2.1 with PKCE, where access tokens stop working after
+          1 hour. The key of "Connect to {BRAND.name}" works until you remove the agent.
         </li>
       </ul>
     </section>
@@ -248,7 +251,8 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
       <h2>What {BRAND.name} keeps</h2>
       <ul>
         <li>
-          <strong>Your email address.</strong> You sign in with it. {BRAND.name} sends your sign-in codes to it.
+          <strong>Your email address.</strong> You sign in with it. {BRAND.name} sends your sign-in codes and account
+          notices to it, for example when a new agent gets access.
         </li>
         <li>
           <strong>Your connections.</strong> For each tool: the name of the account at the provider, and the sign-in
@@ -258,7 +262,11 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
           <strong>Your approvals.</strong> Which agent can use which tool, and the level: Read only, or Read and write.
         </li>
         <li>
-          <strong>The list of calls.</strong> The agent, the tool, the time and the result (success or failure).
+          <strong>The list of calls.</strong> The agent, the tool or the name of the function, the time and the result
+          (success or failure). Also your approvals and plan changes.
+        </li>
+        <li>
+          <strong>Your plan.</strong> Free or Pro, and your customer number at Stripe if you pay.
         </li>
         <li>
           <strong>Two cookies.</strong> One keeps you signed in. One protects your sign-in code. See{" "}
@@ -330,7 +338,7 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
       <ul>
         <li>To sign you in.</li>
         <li>To do the calls that you approved, for the agents that you approved.</li>
-        <li>To show you what each agent did.</li>
+        <li>To show you what each agent did (Pro).</li>
         <li>To keep the service safe and to find errors.</li>
       </ul>
       <p>
@@ -352,7 +360,8 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
           company, with its own privacy policy. {BRAND.name} does not control what an agent does with the data.
         </li>
         <li>
-          <strong>Our service providers.</strong> Railway operates the server. Resend sends the sign-in codes.
+          <strong>Our service providers.</strong> Cloudflare carries all traffic to {BRAND.name} and hosts gulpy.ai.
+          Resend sends email. Stripe takes payments.
         </li>
         <li>
           <strong>Authorities.</strong> Only when the law makes it necessary.
@@ -370,12 +379,13 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
           <strong>Remove an agent.</strong> Its access stops immediately.
         </li>
         <li>
-          <strong>Get a copy of your data.</strong> Open <a href="/#account">My tools, then Your account</a>, and
+          <strong>Get a copy of your data.</strong> Open <a href="/#account">My tools, then Account</a>, and
           select Download my data.
         </li>
         <li>
           <strong>Delete your account.</strong> On the same page, select Delete my account. {BRAND.name} asks each
-          provider to cancel your tokens, then deletes all of your data. You can also write to{" "}
+          provider to cancel your tokens where the provider supports it, cancels your paid plan, then deletes all of
+          your data. You can also write to{" "}
           <Mail to={CONTACT.privacy} />.
         </li>
       </ul>
@@ -387,10 +397,16 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
         <li>Your email address: until you delete your account.</li>
         <li>The tokens of a tool: until you remove the tool or delete your account.</li>
         <li>Your approvals: until you remove the agent or delete your account.</li>
-        <li>The list of calls: {LEGAL.callLogDays} days. Then {BRAND.name} deletes it automatically.</li>
+        <li>
+          The list of calls: 7 days on Free, {LEGAL.callLogDays} days on Pro. Then {BRAND.name} deletes it
+          automatically.
+        </li>
         <li>Sign-in codes: 1 day after they expire. Sessions: when they expire.</li>
         <li>Tokens of agents that expired or that you removed: 30 days.</li>
-        <li>When you delete your account, {BRAND.name} deletes all of this immediately.</li>
+        <li>
+          When you delete your account, {BRAND.name} deletes all of this immediately. Backups are deleted within 14
+          days. Stripe keeps payment records as the law requires.
+        </li>
         <li>We keep data longer only when the law makes it necessary.</li>
       </ul>
     </section>
@@ -418,8 +434,7 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
       <p>{BRAND.name} sets two cookies. Both are necessary to sign you in and keep your account safe.</p>
       <ul>
         <li>
-          <code>gulpy_session</code> keeps you signed in. It ends when you close the browser. If you select "Keep me
-          signed in", it stays for 30 days, or until you sign out.
+          <code>gulpy_session</code> keeps you signed in for 30 days, or until you sign out.
         </li>
         <li>
           <code>gulpy_signin</code> ties your sign-in code to the browser that asked for it. It stays for 10 minutes.
@@ -534,8 +549,8 @@ export const Terms: FC<{ model: InfoModel }> = ({ model }) => (
           approve or undo the actions of an Agent.
         </li>
         <li>
-          Give only the access that you need. Use "Read only" where you do not want changes. Check your list of calls,
-          and remove the access of an Agent that you do not trust.
+          Give only the access that you need. Use "Read only" where you do not want changes. Check your activity (Pro)
+          or download your data, and remove the access of an Agent that you do not trust.
         </li>
         <li>
           {BRAND.name} is not responsible for a loss, deletion, change or disclosure of data, or any other result,
@@ -594,13 +609,17 @@ export const Terms: FC<{ model: InfoModel }> = ({ model }) => (
 
     <Clause n={9} title="Fees">
       <p>
-        {BRAND.name} is free now. If we add fees, we will tell you before they start, and you can choose to stop.
+        Free costs $0. Pro costs $10 a month, plus tax where it applies. Pro renews each month until you cancel.
+        Stripe charges your card on the same date each month. Cancel at any time in My tools, then Account, then
+        Manage plan. Pro stays on until the end of the month that you paid for; then your account goes to Free. On
+        Free, the agents that you approved keep working, and activity older than 7 days is deleted. We do not refund
+        part of a month unless the law requires it. We email you at least 30 days before a price changes.
       </p>
     </Clause>
 
     <Clause n={10} title="Ending your use">
       <p>
-        You can stop at any time. To delete your account, open <a href="/#account">My tools, then Your account</a>, or
+        You can stop at any time. To delete your account, open <a href="/#account">My tools, then Account</a>, or
         write to <Mail to={CONTACT.support} />. We can suspend or end your access if you break these Terms, if the law
         or a provider makes it necessary, or to protect the service. Where it is reasonable, we tell you first. When
         your account ends, we delete your tokens and your data as our <a href="/privacy">Privacy Policy</a> says.

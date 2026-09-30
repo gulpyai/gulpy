@@ -18,7 +18,14 @@ function createStripe() {
   const customers: Record<string, { id: string; email: string | null }> = {};
   const sessions: Record<string, unknown> = {};
   const portalRequests: Record<string, string>[] = [];
+  const canceled: string[] = [];
+  const failures = { cancel: false };
   const app = new Hono();
+  app.delete("/v1/subscriptions/:id", (c) => {
+    if (failures.cancel) return c.json({ error: { message: "Stripe is down" } }, 500);
+    canceled.push(c.req.param("id"));
+    return c.json({ id: c.req.param("id"), status: "canceled" });
+  });
   app.get("/v1/payment_links", (c) =>
     c.json({
       data: [
@@ -47,7 +54,7 @@ function createStripe() {
     portalRequests.push(form);
     return c.json({ url: "https://billing.stripe.com/p/session/test_portal" });
   });
-  return { app, subscriptions, customers, sessions, portalRequests };
+  return { app, subscriptions, customers, sessions, portalRequests, canceled, failures };
 }
 
 function subscription(fields: {
@@ -297,6 +304,33 @@ describe("checkout and the portal", () => {
     expect(page.html).toContain("Plan: <strong>Family</strong>");
     const bad = await browser.open(`${GULPY}/?checkout=../secret`);
     expect(bad.url).toBe(`${GULPY}/?notice=payment_pending`);
+  });
+});
+
+describe("deleting the account", () => {
+  async function deleteAccount() {
+    const page = await browser.open(`${GULPY}/account/delete`);
+    return browser.open(`${GULPY}/account/delete`, { form: { csrf: field(page.html, "csrf"), confirm: EMAIL }, from: page.url });
+  }
+
+  test("cancels the paid plan at Stripe first, so the person is not charged again", async () => {
+    await browser.signIn(world, EMAIL);
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({ plan: "pro", interval: "month" }) } });
+    const id = userId();
+    await deleteAccount();
+    expect(stripe.canceled).toEqual(["sub_1"]);
+    expect(world.gulpy.deps.store.userById(id)).toBeNull();
+  });
+
+  test("keeps the account when Stripe cannot cancel the plan", async () => {
+    await browser.signIn(world, EMAIL);
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({ plan: "pro", interval: "month" }) } });
+    stripe.failures.cancel = true;
+    const page = await deleteAccount();
+    expect(page.html).toContain("could not cancel your paid plan");
+    expect(world.gulpy.deps.store.userByEmail(EMAIL)).not.toBeNull();
   });
 });
 
