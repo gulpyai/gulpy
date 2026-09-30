@@ -2325,6 +2325,31 @@ code,
 
 /* The account: a copy of the data, and deletion */
 
+/* The plan of the person, under Your account */
+.plan-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 14px 22px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.plan-line > span > strong {
+  color: var(--ink);
+}
+
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .account-actions {
   display: flex;
   flex-wrap: wrap;

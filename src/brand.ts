@@ -12,6 +12,9 @@ export const CONTACT = {
   founder: "skyler@gulpy.ai",
 } as const;
 
+/** The plans and their prices, on the marketing site. The dashboard links here from Free. */
+export const PRICING_URL = "https://gulpy.ai/pricing";
+
 /**
  * The legal facts that the Terms and the Privacy page use. Change `entity` to the
  * registered name when the company exists, and change `rulesVersion` each time

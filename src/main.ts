@@ -23,3 +23,8 @@ Bun.serve({ port: config.port, fetch: app.fetch });
 
 console.log(`[gulpy] ${config.baseUrl} (${config.env})`);
 console.log(`[gulpy] providers: ${[...deps.providers.keys()].join(", ") || "none"}`);
+console.log(
+  config.stripe
+    ? `[gulpy] paid plans: on (${config.stripe.secretKey.startsWith("sk_live_") ? "live" : "test"} mode)`
+    : "[gulpy] paid plans: off. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET to sell plans.",
+);

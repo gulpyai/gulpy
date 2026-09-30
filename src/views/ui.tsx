@@ -290,6 +290,11 @@ export function formatTime(ms: number): string {
 }
 
 /** "2 minutes ago". The pages are made on the server, so the reference time is the server time. */
+/** "Oct 28, 2027" */
+export function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
 export function timeAgo(ms: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - ms) / 1000));
   if (seconds < 60) return "a moment ago";
