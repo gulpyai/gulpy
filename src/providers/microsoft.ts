@@ -236,7 +236,8 @@ export function microsoftProvider(credentials: ProviderCredentials): Provider {
         url.searchParams.set("$select", FILE_FIELDS);
         if (!query) url.searchParams.set("$orderby", "lastModifiedDateTime desc");
         const list = await api.json<{ value?: GraphDriveItem[] }>(url.toString());
-        return (list.value ?? []).filter((item) => !item.folder).map(toFile);
+        // Only files: a folder, and a special item such as "Personal Vault", have no `file` part.
+        return (list.value ?? []).filter((item) => item.file).map(toFile);
       },
 
       async readFile(api, id) {

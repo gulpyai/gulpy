@@ -49,7 +49,17 @@ function createStripe() {
   return { app, subscriptions, customers, sessions, portalRequests };
 }
 
-function subscription(fields: { id?: string; customer?: string; plan?: string; interval?: "month" | "year"; status?: string; quantity?: number; cancel?: boolean }) {
+function subscription(fields: {
+  id?: string;
+  customer?: string;
+  plan?: string;
+  interval?: "month" | "year";
+  status?: string;
+  quantity?: number;
+  cancel?: boolean;
+  /** Seconds. The customer portal cancels with this and leaves cancel_at_period_end false. */
+  cancelAt?: number;
+}) {
   const plan = fields.plan ?? "personal";
   const interval = fields.interval ?? "year";
   return {
@@ -58,6 +68,7 @@ function subscription(fields: { id?: string; customer?: string; plan?: string; i
     customer: fields.customer ?? "cus_1",
     status: fields.status ?? "active",
     cancel_at_period_end: fields.cancel ?? false,
+    cancel_at: fields.cancelAt ?? null,
     metadata: { plan, interval: interval === "month" ? "monthly" : "yearly" },
     items: {
       data: [
@@ -190,6 +201,19 @@ describe("the webhook", () => {
     expect(home.html).toContain("See the plans");
     expect(home.html).toContain("Invoices");
     expect(world.gulpy.deps.store.subscription(userId())?.status).toBe("canceled");
+  });
+
+  test("a cancel in the customer portal (cancel_at, with cancel_at_period_end false) shows the end date", async () => {
+    await browser.signIn(world, EMAIL);
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({}) } });
+    expect((await browser.open(`${GULPY}/`)).html).toContain("Renews");
+
+    await webhook({ type: "customer.subscription.updated", data: { object: subscription({ cancelAt: 1_793_335_552 }) } });
+    const home = await browser.open(`${GULPY}/`);
+    expect(home.html).toContain("Ends");
+    expect(home.html).not.toContain("Renews");
+    expect(world.gulpy.deps.store.subscription(userId())?.periodEnd).toBe(1_793_335_552_000);
   });
 });
 

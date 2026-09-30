@@ -89,6 +89,11 @@ interface StripeSubscription {
   customer: string | { id: string };
   status: string;
   cancel_at_period_end: boolean;
+  /**
+   * The time at which the plan stops, in seconds. The customer portal now cancels with this
+   * field and leaves `cancel_at_period_end` false.
+   */
+  cancel_at?: number | null;
   /** Older API versions put the period on the subscription. */
   current_period_end?: number;
   metadata?: Record<string, string>;
@@ -231,7 +236,9 @@ function apply(deps: Deps, user: User, subscription: StripeSubscription): string
   const plan = planFrom(subscription);
   if (!plan) return `ignored: no plan on ${subscription.id}`;
   const item = subscription.items.data[0];
-  const periodEnd = item?.current_period_end ?? subscription.current_period_end;
+  // A plan with `cancel_at` ends at that time, not at the end of the period.
+  const cancelAt = subscription.cancel_at ?? null;
+  const periodEnd = cancelAt ?? item?.current_period_end ?? subscription.current_period_end;
   const now = deps.now();
   const before = deps.store.subscription(user.id);
   const row: Subscription = {
@@ -243,7 +250,7 @@ function apply(deps: Deps, user: User, subscription: StripeSubscription): string
     interval: intervalFrom(subscription),
     quantity: item?.quantity ?? 1,
     periodEnd: periodEnd ? periodEnd * 1000 : null,
-    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    cancelAtPeriodEnd: subscription.cancel_at_period_end || cancelAt !== null,
     updatedAt: now,
   };
   deps.store.saveSubscription(row);

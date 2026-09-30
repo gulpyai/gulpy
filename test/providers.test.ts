@@ -497,12 +497,13 @@ describe("Microsoft", () => {
   });
 
 
-  test("searches OneDrive and leaves out folders", async () => {
+  test("searches OneDrive and leaves out folders and the Personal Vault", async () => {
     const replies = {
       "GET https://graph.microsoft.com/v1.0/me/drive/root/search(q='Dana''s%20plan')": {
         value: [
           { id: "f1", name: "Plan.docx", file: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, size: 900, lastModifiedDateTime: "2026-09-27T12:00:00Z", webUrl: "https://onedrive.live.com/f1" },
           { id: "f2", name: "Plans", folder: { childCount: 2 } },
+          { id: "f4", name: "Personal Vault", specialFolder: { name: "vault" } },
         ],
       },
       "GET https://graph.microsoft.com/v1.0/me/drive/root/children": { value: [] },
