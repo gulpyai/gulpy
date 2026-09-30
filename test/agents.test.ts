@@ -55,7 +55,6 @@ describe("connectors", () => {
     expect(consent.html).toContain("Gulpy wants access to your Acme Notes account");
 
     const done = await addConnector(browser, "acme-notes");
-    expect(done.html).toContain("The connection is added.");
     expect(done.html).toContain("alice@acme.test");
     expect(done.html).toContain("alice@acme.test · 3 tools");
     // The second user of the connector uses the registration that Gulpy has.

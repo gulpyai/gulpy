@@ -361,7 +361,6 @@ describe("the user is in control", () => {
       form: { csrf: field(dashboard.html, "csrf") },
       from: dashboard.url,
     });
-    expect(after.html).toContain("The agent does not have access now.");
 
     expect((await world.api("/email/messages", { token: pilot })).status).toBe(401);
     expect((await world.api("/email/messages", { token: buddy })).status).toBe(200);

@@ -287,8 +287,7 @@ describe("checkout and the portal", () => {
       subscription: subscription({ plan: "family" }),
     };
     const page = await browser.open(`${GULPY}/?checkout=cs_done`);
-    expect(page.url).toBe(`${GULPY}/?ok=paid`);
-    expect(page.html).toContain("Thank you. Your plan is active.");
+    expect(page.url).toBe(`${GULPY}/#account`);
     expect(page.html).toContain("Plan: <strong>Family</strong>");
 
     // The session of a different person, or a session that is not paid, changes nothing.

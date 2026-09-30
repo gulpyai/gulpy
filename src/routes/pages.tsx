@@ -100,14 +100,6 @@ const NOTICES: Record<string, string> = {
  */
 const showCode = (deps: Deps): boolean => deps.config.env !== "production" && isLocalAddress(deps.config.baseUrl);
 
-const OK_NOTICES: Record<string, string> = {
-  connected: "The connection is added.",
-  removed: "The connection is removed. The tokens are deleted.",
-  revoked: "The agent does not have access now.",
-  access: "Saved. The agent has the new access now.",
-  paid: "Thank you. Your plan is active.",
-};
-
 /** The request of an agent, as it arrives at the authorize endpoint. */
 const AUTHORIZE_PARAMS = [
   "client_id",
@@ -161,7 +153,10 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
   const expectedOrigin = new URL(deps.config.baseUrl).origin;
 
   app.use("*", async (c, next) => {
-    if (c.req.method !== "GET" && c.req.method !== "HEAD" && !sameOrigin(c, expectedOrigin)) {
+    // The start form on the marketing site asks for a code here. The code works only in the browser
+    // that asked for it, and a person types it on this site, so this form cannot sign anybody in.
+    const fromSite = c.req.path === "/auth/start" && c.req.header("origin") === deps.config.siteOrigin;
+    if (c.req.method !== "GET" && c.req.method !== "HEAD" && !fromSite && !sameOrigin(c, expectedOrigin)) {
       return c.text(`This request did not come from ${BRAND.name}`, 403);
     }
     await next();
@@ -480,7 +475,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       const { connection, returnTo, created } = await complete(current.user.id);
       if (created) shareWithAgents(deps, current.user.id, connection);
       const next = safeNext(returnTo);
-      return c.redirect(next === "/" ? "/?ok=connected" : withParam(next, "connected", connection.id), 303);
+      return c.redirect(next === "/" ? "/" : withParam(next, "connected", connection.id), 303);
     } catch (error) {
       if (!(error instanceof OAuthError)) throw error;
       if (error.returnTo) return c.redirect(withParam(safeNext(error.returnTo), "notice", error.code), 303);
@@ -570,7 +565,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
           console.error("[gulpy] checkout session", error);
         }
       }
-      return c.redirect(done ? "/?ok=paid" : "/?notice=payment_pending", 303);
+      return c.redirect(done ? "/#account" : "/?notice=payment_pending", 303);
     }
 
     const connections = viewConnections(deps, current.user.id);
@@ -589,7 +584,6 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       agents.set(agent.id, entry);
     }
 
-    const okText = OK_NOTICES[c.req.query("ok") ?? ""];
     const warnText = NOTICES[c.req.query("notice") ?? ""];
     const model: DashboardModel = {
       connections,
@@ -600,7 +594,8 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       agents: [...agents.values()],
       mcpUrl: `${deps.config.baseUrl}/mcp`,
       now,
-      notice: okText ? { kind: "ok", text: okText } : warnText ? { kind: "warn", text: warnText } : undefined,
+      // A change that worked shows on the page itself. Only a problem gets a line at the top.
+      notice: warnText ? { kind: "warn", text: warnText } : undefined,
       plan: billingOn(deps) ? planOf(deps, current.user.id) : undefined,
       agentLimit: unlimited(deps, current.user.id) ? undefined : FREE_AGENTS,
       activity: unlimited(deps, current.user.id)
@@ -666,7 +661,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
         status: null,
       });
     }
-    return c.redirect("/?ok=removed", 303);
+    return c.redirect("/", 303);
   });
 
   app.post("/apps/:id/revoke", async (c) => {
@@ -688,7 +683,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
         status: null,
       });
     }
-    return c.redirect("/?ok=revoked#agents", 303);
+    return c.redirect("/#agents", 303);
   });
 
   // The Edit form of an agent on the dashboard: a level for each area of each connection.
@@ -713,7 +708,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     const left = deps.store.grantsForAppUser(appId, current.user.id).length;
     const removed = changed && left === 0;
     if (json) return c.json({ ok: changed, removed, tools: left, total: deps.store.connectionsByUser(current.user.id).length });
-    return c.redirect(`/?ok=${removed ? "revoked" : "access"}#agents`, 303);
+    return c.redirect("/#agents", 303);
   });
 
   // The account: a copy of the data, and deletion

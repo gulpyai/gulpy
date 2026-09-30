@@ -13,6 +13,8 @@ import { randomToken, sha256 } from "../src/crypto.ts";
 import { ConsoleMailer } from "../src/mailer.ts";
 
 export const GULPY = "https://gulpy.test";
+/** The marketing site. Its start form can send an email address to /auth/start. */
+export const SITE = "https://site.gulpy.test";
 export const ACME = "https://acme.test";
 export const NOTES = "https://notes.acme.test";
 export const TASKS = "https://tasks.acme.test";
@@ -80,6 +82,7 @@ export async function createWorld(
     stripe: options.stripe,
     autoApprove: options.autoApprove ?? true,
     redirectHosts: ["old.gulpy.test"],
+    siteOrigin: SITE,
   };
 
   // A mail provider and MCP connectors for the tests. The product has none of them.
