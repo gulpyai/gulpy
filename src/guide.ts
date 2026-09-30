@@ -9,71 +9,72 @@ export function agentGuide(base: string): string {
   return `# ${name} for agents
 
 ${name} is a vault for the accounts of one person: email, calendar, files, Notion,
-Linear, GitHub and others. After one sign-in you get a key. With the key you call
-all the tools of the person with plain HTTP and JSON. ${name} signs in to each
-tool for you. You never see a password or a provider token.
+Linear, Stripe and others. After one tap you get a key, and with it you use all
+their tools. ${name} signs in to each tool for you. You never see a password.
 
-## 1. Connect (one time)
+## Do this when the user says "connect to ${name}"
 
-Do this when the user says "connect to ${name}".
+Work silently. Do not ask the user to choose anything. They only tap **Allow** in
+the browser (and sign in the first time). Pick the first case that fits you.
 
-On macOS or Linux, run:
+### A. You can run shell commands (Claude Code, Codex, Cursor, OpenClaw, a terminal agent)
+
+Run, with your own name:
 
 \`\`\`sh
-curl -fsSL ${base}/connect.sh | sh -s -- "<your name, for example Claude Code>"
+curl -fsSL ${base}/connect.sh | sh -s -- "Claude Code"
 \`\`\`
 
-The script opens the browser. The user taps **Allow** (and signs in the first time).
-The script saves the key in \`~/.config/gulpy/key\` (mode 600). Tell the user to look
-at the browser.
+It opens the browser, waits for Allow, saves the key in \`~/.config/gulpy/key\`,
+tests the tools and prints one line, for example \`Connected: 58 tools.\`
+In Claude Code it also adds ${name} as an MCP server, so the tools are built in from
+the next session. Until then, and in every other agent, use the HTTP calls below.
 
-Without the script (RFC 8628, device authorization grant):
+### B. You can send web requests but not run commands (for example Meta Muse, Instinct)
 
-1. Ask for a code:
-
-   \`\`\`sh
-   curl -sS -X POST ${base}/device/code -d "client_name=Claude Code"
-   \`\`\`
-
+1. \`POST ${base}/device/code\` with the form field \`client_name=<your name>\`.
    The answer has \`device_code\`, \`verification_uri_complete\` and \`interval\`.
-2. Open \`verification_uri_complete\` in the browser of the user (\`open\` on macOS,
-   \`xdg-open\` on Linux). If you cannot open it, show the address to the user.
-3. Every \`interval\` seconds, ask for the key:
+2. Send the user the \`verification_uri_complete\` link: "Tap Allow here, then say done."
+3. When they say done (or every \`interval\` seconds), \`POST ${base}/device/token\` with
+   \`device_code=<device_code>\`. \`authorization_pending\`: ask again later.
+   \`slow_down\`: wait 5 more seconds. Success: \`{ "access_token": "gulpy_..." }\`.
+   The key waits 1 hour after Allow.
+4. Keep the key in your memory for later conversations.
 
-   \`\`\`sh
-   curl -sS -X POST ${base}/device/token -d "device_code=<device_code>"
-   \`\`\`
+### C. You cannot run commands or send web requests (the ChatGPT app, the Claude app, Grok, Gemini)
 
-   \`authorization_pending\`: ask again later. \`slow_down\`: wait 5 more seconds.
-   \`access_denied\` or \`expired_token\`: stop and tell the user.
-   Success gives \`{ "access_token": "gulpy_..." }\`. That is the key.
-4. Save the key where you keep secrets, for example \`~/.config/gulpy/key\` with mode 600.
+Tell the user these steps. They take one minute and need no key:
 
-**A chat agent that cannot wait in the background** (for example an assistant in a
-chat window): send the user the \`verification_uri_complete\` link and ask them to
-say "done" after they tap Allow. When they say it, call \`/device/token\` one time.
-The key waits for you for 1 hour after Allow.
+- **Claude:** Settings, Connectors, "Add custom connector", paste \`${base}/mcp\`, then Connect.
+- **ChatGPT:** Settings, Apps and connectors, Advanced, turn on Developer mode, then Create, paste \`${base}/mcp\`.
+- **Grok:** grok.com/connectors, New Connector, Custom, paste \`${base}/mcp\`.
 
-Show the user only the link. There is no code to read or type. Never show the
-\`device_code\` or the key: they are secrets.
+A window opens. The user taps Allow. The tools are then built in.
 
-## 2. Keep the key secret
+### Then, in every case
 
-The key opens all the tools of the user. Send it only to ${base}. Do not print
-it, do not put it in a file that other people read, and do not send it to another
-service. The user can stop the key at any time on ${base}.
+Call the tool list (below). Tell the user one line: "Connected to ${name}: <number> tools,
+for example Gmail, Calendar, Notion." If the list is empty, say: "Your ${name} account has
+no tools yet. Add them at ${base}."
 
-## 3. List the tools
+## Keep the key secret
+
+The key opens all the tools of the user. Send it only to ${base}. Never show the key
+or the \`device_code\` to the user, never put them in a shared file, and never send
+them to another service. The user can stop the key at any time on ${base}.
+
+## Use the tools with HTTP
+
+List them:
 
 \`\`\`sh
 curl -sS ${base}/v1/tools -H "Authorization: Bearer $(cat ~/.config/gulpy/key)"
 \`\`\`
 
-The answer is \`{ "tools": [...] }\`. Each tool has \`name\`, \`description\`,
-\`input\` (JSON Schema of the body) and \`read_only\`. The list changes when the
-user adds or removes a tool. List the tools again when a name is not known.
+The answer is \`{ "tools": [...] }\`. Each tool has \`name\`, \`description\`, \`input\`
+(JSON Schema of the body) and \`read_only\`. List them again when a name is not known.
 
-## 4. Call a tool
+Call one:
 
 \`\`\`sh
 curl -sS -X POST ${base}/v1/tools/email_search \\
@@ -82,24 +83,24 @@ curl -sS -X POST ${base}/v1/tools/email_search \\
   -d '{"query": "invoice", "limit": 5}'
 \`\`\`
 
-The answer is \`{ "result": ... }\`. Before a tool that is not \`read_only\` (for
-example \`email_send\`), tell the user what you will do.
+The answer is \`{ "result": ... }\`. Before a tool that is not \`read_only\` (for example
+\`email_send\`), tell the user what you will do.
 
-## 5. Errors
+## Use the tools with MCP
+
+The address is \`${base}/mcp\` (Streamable HTTP). Send the same key as
+\`Authorization: Bearer <key>\`, or let the client sign in with OAuth.
+
+## Errors
 
 Each error has the shape \`{ "error": { "code", "message" } }\`.
 
 | Code | What to do |
 |---|---|
-| \`invalid_token\` (401) | The user removed this agent. Connect again (step 1). |
-| \`not_granted\` (403) | The user has no tool for this. Ask the user to add it on ${base}. |
-| \`connection_needs_reauth\` (409) | The user must connect that account again on ${base}. |
+| \`invalid_token\` (401) | The user removed this agent. Connect again. |
+| \`not_granted\` (403) | The user has no tool for this. Ask them to add it at ${base}. |
+| \`connection_needs_reauth\` (409) | The user must connect that account again at ${base}. |
 | \`connection_required\` (400) | Two accounts match. Send \`connection_id\` from \`list_connections\`. |
-
-## MCP
-
-An agent that speaks MCP can use \`${base}/mcp\` with the same key, or with the
-standard MCP sign-in.
 `;
 }
 
@@ -137,7 +138,17 @@ while :; do
     umask 077
     printf '%s\\n' "$KEY" > "$DIR/key"
     printf '%s\\n' "$BASE" > "$DIR/url"
-    echo "Connected. The key is in $DIR/key. Guide: $BASE/agents.md"
+    # In Claude Code, also add ${BRAND.name} as an MCP server: built-in tools from the next session.
+    MCP=""
+    if [ -n "\${CLAUDECODE:-}" ] && command -v claude >/dev/null 2>&1; then
+      claude mcp remove gulpy -s user >/dev/null 2>&1 || true
+      if claude mcp add --scope user --transport http gulpy "$BASE/mcp" -H "Authorization: Bearer $KEY" >/dev/null 2>&1; then
+        MCP=" ${BRAND.name} is also an MCP server in Claude Code from the next session."
+      fi
+    fi
+    TOOLS=$(curl -sS "$BASE/v1/tools" -H "Authorization: Bearer $KEY" | grep -o '"read_only":' | wc -l | tr -d ' ')
+    echo "Connected: $TOOLS tools. The key is in $DIR/key.$MCP"
+    if [ "$TOOLS" -le 1 ]; then echo "Your ${BRAND.name} account has no tools yet. Add them at $BASE."; fi
     exit 0
   fi
   case "$(field error "$REPLY")" in
