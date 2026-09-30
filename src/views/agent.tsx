@@ -307,6 +307,19 @@ export const DeviceConsent: FC<{ app: App; code: string; viewer: Viewer; logos: 
       )}
     </header>
     <div class="link-stack">
+      {logos.length === 0 && (
+        <Notice kind="warn">
+          {viewer.user.email} has no tools yet. {app.name} will see nothing until you add some. Signed in with the
+          wrong email?{" "}
+          <form method="post" action="/auth/signout" class="inline-form">
+            <input type="hidden" name="csrf" value={viewer.csrf} />
+            <input type="hidden" name="next" value={`/device?code=${code}`} />
+            <button class="link-button" type="submit">
+              Use a different email
+            </button>
+          </form>
+        </Notice>
+      )}
       <form method="post" action="/device" class="link-form">
         <input type="hidden" name="csrf" value={viewer.csrf} />
         <input type="hidden" name="code" value={code} />

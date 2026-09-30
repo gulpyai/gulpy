@@ -127,6 +127,17 @@ describe("connect to Gulpy", () => {
     expect(after.html).toContain("Connect Codex?");
   });
 
+  test("an account with no tools gets a warning and a way to switch email", async () => {
+    await browser.signIn(world, EMAIL);
+    const start = await agentPost("/device/code", { client_name: "Muse" });
+    const consent = await browser.open(start.body.verification_uri_complete);
+    expect(consent.html).toContain(`${EMAIL} has no tools yet.`);
+    expect(consent.html).toContain("Use a different email");
+    await addConnector(browser, "acme-notes");
+    const withTools = await browser.open(start.body.verification_uri_complete);
+    expect(withTools.html).not.toContain("has no tools yet");
+  });
+
   test("a tool that the user adds later reaches the agent with no new step", async () => {
     await browser.signIn(world, EMAIL);
     const key = await connect();

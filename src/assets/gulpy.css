@@ -3168,3 +3168,7 @@ code,
   gap: 6px;
   margin-top: 10px;
 }
+
+.inline-form {
+  display: inline;
+}
