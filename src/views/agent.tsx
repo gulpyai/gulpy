@@ -366,3 +366,24 @@ export const DeviceDone: FC<{ name: string; allowed: boolean; logos: Logo[] }> =
     </div>
   </LinkPage>
 );
+
+/** A person on Free has `FREE_AGENTS` agents and tries to add one more. */
+export const AgentLimit: FC<{ name: string; limit: number }> = ({ name, limit }) => (
+  <LinkPage title="Upgrade to Pro">
+    <div class="done">
+      <Mascot size="large" />
+      <h1>Free has {limit} agents</h1>
+      <p class="muted">
+        To add {name}, upgrade to Pro for unlimited agents, or remove an agent you do not use.
+      </p>
+      <div class="done-actions">
+        <a class="btn btn-primary" href="/billing/checkout?plan=pro&interval=monthly" target="_blank" rel="noopener">
+          Upgrade to Pro · $10/month
+        </a>
+        <a class="btn btn-secondary" href="/#agents" target="_blank" rel="noopener">
+          Manage agents
+        </a>
+      </div>
+    </div>
+  </LinkPage>
+);

@@ -1,3 +1,22 @@
+// Start free and Sign in go to #start. Put the cursor in the email field, so the person can type at once.
+(function () {
+  "use strict";
+
+  function focusEmail() {
+    if (location.hash !== "#start") return;
+    var email = document.querySelector("#start input[name=email]");
+    if (email) email.focus({ preventScroll: true });
+  }
+  window.addEventListener("hashchange", focusEmail);
+  document.querySelectorAll('a[href="#start"], a[href="/#start"]').forEach(function (link) {
+    // A second click on the same link does not change the hash, so it fires no hashchange.
+    link.addEventListener("click", function () {
+      setTimeout(focusEmail, 0);
+    });
+  });
+  focusEmail();
+})();
+
 // The picture at the top of the first page. The ring turns, and the mascot eats
 // the connectors one at a time. A new connector then comes into the empty place,
 // so in time the picture shows each connector. With no script the picture is still.

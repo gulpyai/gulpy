@@ -11,7 +11,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { backendOf } from "./access.ts";
 import { BRAND } from "./brand.ts";
-import { capabilitiesAt, levelOf, type AccessLevel } from "./capabilities.ts";
+import { capabilitiesAt, capabilitiesForAreas, levelOf, type AccessLevel, type AreaId } from "./capabilities.ts";
 import { pkceChallenge, randomId, randomToken, safeEqual, sha256 } from "./crypto.ts";
 import type { Deps } from "./deps.ts";
 import { agentCompany } from "./logos.ts";
@@ -440,6 +440,58 @@ export function approveAgent(
   })();
 
   return redirectWith(deps, request.redirectUri, { code, state: request.state });
+}
+
+/**
+ * The user changes the access of an agent on the dashboard. `levels` has, for each connection
+ * in the form, a level for each area (Gmail, Calendar, Drive, or the tools). A connection with
+ * every area off loses its grant. With no grant left, the agent loses access, as with Remove access.
+ * Returns false if the agent had no access.
+ */
+export function setAgentAccess(
+  deps: Deps,
+  appId: string,
+  userId: string,
+  levels: ReadonlyMap<string, ReadonlyMap<AreaId, AccessLevel | "off">>,
+): boolean {
+  const before = new Map(deps.store.grantsForAppUser(appId, userId).map((grant) => [grant.connectionId, grant]));
+  if (before.size === 0) return false;
+  const now = deps.now();
+  deps.store.db.transaction(() => {
+    for (const connection of deps.store.connectionsByUser(userId)) {
+      const areas = levels.get(connection.id);
+      const grant = before.get(connection.id);
+      if (!areas) continue;
+      const capabilities = capabilitiesForAreas(areas, connection.capabilities);
+      if ((grant?.capabilities ?? []).join() === capabilities.join()) continue;
+      if (capabilities.length === 0) {
+        deps.store.deleteGrantFor(appId, connection.id);
+      } else {
+        deps.store.upsertGrant({
+          id: grant?.id ?? randomId("grant"),
+          userId,
+          appId,
+          connectionId: connection.id,
+          capabilities,
+          createdAt: grant?.createdAt ?? now,
+          updatedAt: now,
+        });
+      }
+      deps.store.audit({
+        ts: now,
+        userId,
+        appId,
+        connectionId: connection.id,
+        action: capabilities.length === 0 ? "grant.remove" : "grant.approve",
+        detail: capabilities.length === 0 ? "Removed by the user" : capabilities.join(", "),
+        status: null,
+      });
+    }
+    if (deps.store.grantsForAppUser(appId, userId).length === 0) {
+      deps.store.revokeAccessTokensForAppUser(appId, userId, now);
+    }
+  })();
+  return true;
 }
 
 function issueTokens(deps: Deps, appId: string, userId: string, family: string) {

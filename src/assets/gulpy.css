@@ -1890,6 +1890,8 @@ code,
 }
 
 .hero {
+  /* More than the height of the header, so a jump to #start goes to the very top of the page. */
+  scroll-margin-top: 100px;
   min-height: calc(100svh - 58px);
   align-content: center;
   max-width: 1040px;
@@ -1930,7 +1932,6 @@ code,
   box-shadow: var(--shadow);
   display: grid;
   gap: 14px;
-  scroll-margin-top: 90px;
 }
 
 .signin-card h2 {
@@ -3171,4 +3172,303 @@ code,
 
 .inline-form {
   display: inline;
+}
+
+/* Dashboard: the sentence for any AI, then tabs */
+
+.dash {
+  gap: 18px;
+}
+
+.dash .guide {
+  display: flex;
+  align-items: center;
+  gap: 14px 24px;
+  flex-wrap: wrap;
+  padding: 20px 22px;
+}
+
+.guide-text {
+  flex: 1 1 220px;
+  display: grid;
+  gap: 2px;
+}
+
+.guide-text p {
+  color: #a9adb4;
+  font-size: 14px;
+}
+
+.dash .guide .address {
+  flex: 2 1 420px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -1px;
+  padding: 10px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  color: var(--ink);
+}
+
+.tabs a[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.tabs .count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #efede6;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-align: center;
+}
+
+.tab-panel {
+  display: grid;
+  gap: 18px;
+}
+
+/* An agent: one line. Edit opens its tools. */
+
+.rows.agents > li {
+  display: block;
+  padding: 0;
+}
+
+.agent summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 22px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.agent summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent summary:hover {
+  background: #fbfaf7;
+}
+
+.agent details[open] .agent-edit {
+  visibility: hidden;
+}
+
+.access {
+  margin: 0 22px 16px;
+  padding: 6px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fcfbf8;
+}
+
+.access-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.access-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.access-name {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.access-name small {
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.segmented label {
+  position: relative;
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented span {
+  display: block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segmented input:checked + span {
+  background: var(--ink);
+  color: #fff;
+}
+
+.segmented input[value="off"]:checked + span {
+  background: #e7e5de;
+  color: var(--ink);
+}
+
+.segmented input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.access-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 640px) {
+  .access-list li {
+    flex-wrap: wrap;
+  }
+
+  .segmented {
+    width: 100%;
+  }
+
+  .segmented label {
+    flex: 1;
+    text-align: center;
+  }
+}
+
+.done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* The Edit form of an agent: Google has a row for Gmail, Calendar and Drive */
+
+.access-group {
+  display: block !important;
+}
+
+.access-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.access-group ul {
+  margin: 8px 0 0 13px;
+  padding-left: 23px;
+  border-left: 2px solid var(--line);
+}
+
+.access-group ul li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.access-group ul .access-name {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.segmented span {
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.access-status {
+  flex: 1;
+  font-size: 13px;
+  color: var(--muted);
+  transition: opacity 0.2s ease;
+}
+
+.access-status:empty {
+  opacity: 0;
+}
+
+.access-status-ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.access-status-ok::before {
+  content: "✓ ";
+}
+
+.access-status-warn {
+  color: var(--warn);
+}
+
+.access-actions {
+  align-items: center;
+}
+
+/* The Edit panel opens and closes with a slide, where the browser can animate the height of details. */
+.agent details {
+  interpolate-size: allow-keywords;
+}
+
+.agent details::details-content {
+  height: 0;
+  overflow: hidden;
+  transition: height 0.25s ease, content-visibility 0.25s allow-discrete;
+}
+
+.agent details[open]::details-content {
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent details::details-content,
+  .segmented span {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .access-group ul li {
+    flex-wrap: wrap;
+  }
 }

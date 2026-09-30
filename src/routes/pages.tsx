@@ -8,6 +8,7 @@ import {
   findAgent,
   isTrustedReturn,
   redirectWith,
+  setAgentAccess,
   shareWithAgents,
   type Selection,
 } from "../agents.ts";
@@ -21,8 +22,20 @@ import {
   verifyCode,
   viewer,
 } from "../auth.ts";
-import { billingOn, checkoutUrl, completeCheckout, isInterval, isPlan, planOf, portalUrl } from "../billing.ts";
+import {
+  agentAllowed,
+  billingOn,
+  checkoutUrl,
+  completeCheckout,
+  FREE_AGENTS,
+  isForSale,
+  isInterval,
+  planOf,
+  portalUrl,
+  unlimited,
+} from "../billing.ts";
 import { BRAND, LEGAL } from "../brand.ts";
+import { AREAS, type AccessLevel, type AreaId } from "../capabilities.ts";
 import { isLocalAddress } from "../config.ts";
 import { randomId, randomToken, sha256 } from "../crypto.ts";
 import type { Deps } from "../deps.ts";
@@ -34,6 +47,7 @@ import type { Vault } from "../vault.ts";
 import {
   AgentConsent,
   AgentDone,
+  AgentLimit,
   AgentSignIn,
   DeviceConsent,
   DeviceDone,
@@ -77,7 +91,7 @@ const NOTICES: Record<string, string> = {
   nothing_selected: "Select one or more connections.",
   setup_needed: "This connector needs an app that the operator registers at the provider first.",
   payment_pending: "Gulpy could not confirm the payment yet. If you paid, the plan shows in a minute.",
-  no_plan: "That plan is not for sale yet.",
+  no_plan: "Pro is not for sale yet. It opens soon.",
 };
 
 /**
@@ -90,6 +104,7 @@ const OK_NOTICES: Record<string, string> = {
   connected: "The connection is added.",
   removed: "The connection is removed. The tokens are deleted.",
   revoked: "The agent does not have access now.",
+  access: "Saved. The agent has the new access now.",
   paid: "Thank you. Your plan is active.",
 };
 
@@ -249,6 +264,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     }
     const current = viewer(deps, c);
     if (!current) return render(c, <DeviceSignIn app={agent} state={{ next: `/device?code=${code}` }} />);
+    if (!agentAllowed(deps, current.user.id, agent.id)) return render(c, <AgentLimit name={agent.name} limit={FREE_AGENTS} />);
     const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
     return render(c, <DeviceConsent app={agent} code={code} viewer={current} logos={logos} />);
   });
@@ -268,6 +284,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       denyDevice(deps, code, current.user.id);
       return render(c, <DeviceDone name={agent.name} allowed={false} logos={[]} />);
     }
+    if (!agentAllowed(deps, current.user.id, agent.id)) return render(c, <AgentLimit name={agent.name} limit={FREE_AGENTS} />);
     if (allowDevice(deps, code, current.user.id)) await tellUser(deps, current.user.email, agent.name);
     const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
     return render(c, <DeviceDone name={agent.name} allowed logos={logos} />);
@@ -287,6 +304,10 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     if (!current) {
       const noTap = deps.config.autoApprove && isTrustedReturn(check.request.redirectUri);
       return render(c, <AgentSignIn app={check.request.app} state={{ next: here }} noTap={noTap} />);
+    }
+
+    if (!agentAllowed(deps, current.user.id, check.request.app.id)) {
+      return render(c, <AgentLimit name={check.request.app.name} limit={FREE_AGENTS} />);
     }
 
     // An agent that Gulpy knows, or a program on this computer, gets the tools with no approval step.
@@ -333,6 +354,9 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     if (!checkCsrf(current, form.csrf)) return c.text("The form expired. Go back and try again.", 403);
 
     const { request } = check;
+    if (form.decision === "allow" && !agentAllowed(deps, current.user.id, request.app.id)) {
+      return render(c, <AgentLimit name={request.app.name} limit={FREE_AGENTS} />);
+    }
     if (form.decision !== "allow") {
       const to = redirectWith(deps, request.redirectUri, {
         error: "access_denied",
@@ -569,20 +593,25 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     const warnText = NOTICES[c.req.query("notice") ?? ""];
     const model: DashboardModel = {
       connections,
-      catalog: viewCatalog(deps, current.user.id),
+      // The Connected list shows the tools that the user has. The catalog shows the others.
+      catalog: viewCatalog(deps, current.user.id, false, true)
+        .map((group) => ({ ...group, cards: group.cards.filter((card) => card.state !== "connected") }))
+        .filter((group) => group.cards.length > 0),
       agents: [...agents.values()],
-      activity: deps.store.auditByUser(current.user.id, 30).map((entry) => ({
-        entry,
-        appName: entry.appId ? (deps.store.appById(entry.appId)?.name ?? "Deleted agent") : null,
-        target: entry.connectionId ? (byId.get(entry.connectionId)?.name ?? entry.detail?.split(" · ")[0] ?? "Removed tool") : null,
-      })),
       mcpUrl: `${deps.config.baseUrl}/mcp`,
-      noTap: deps.config.autoApprove,
-      local: /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(deps.config.baseUrl),
-      calls: deps.store.countCalls(current.user.id, now - 7 * 24 * 60 * 60_000),
       now,
       notice: okText ? { kind: "ok", text: okText } : warnText ? { kind: "warn", text: warnText } : undefined,
       plan: billingOn(deps) ? planOf(deps, current.user.id) : undefined,
+      agentLimit: unlimited(deps, current.user.id) ? undefined : FREE_AGENTS,
+      activity: unlimited(deps, current.user.id)
+        ? deps.store.auditByUser(current.user.id, 50).map((entry) => ({
+            entry,
+            appName: entry.appId ? (deps.store.appById(entry.appId)?.name ?? "Deleted agent") : null,
+            target: entry.connectionId
+              ? (byId.get(entry.connectionId)?.name ?? entry.detail?.split(" · ")[0] ?? "Removed tool")
+              : null,
+          }))
+        : undefined,
     };
     return render(c, <Dashboard viewer={current} model={model} />);
   });
@@ -592,12 +621,17 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
   app.get("/billing/checkout", async (c) => {
     if (!billingOn(deps)) return c.text("Payments are not set up", 404);
     const plan = c.req.query("plan");
-    const interval = c.req.query("interval") ?? "yearly";
-    if (!isPlan(plan) || !isInterval(interval)) return c.text("Unknown plan", 400);
+    const interval = c.req.query("interval") ?? "monthly";
+    if (!isForSale(plan) || !isInterval(interval)) return c.text("Unknown plan", 400);
     const current = viewer(deps, c);
     if (!current) return c.redirect(withParam("/", "next", `/billing/checkout?plan=${plan}&interval=${interval}`), 303);
-    const url = await checkoutUrl(deps, current.user, plan, interval);
-    if (!url) return c.redirect("/?notice=no_plan", 303);
+    let url: string | null = null;
+    try {
+      url = await checkoutUrl(deps, current.user, plan, interval);
+    } catch (error) {
+      console.error("[gulpy] checkout link", error);
+    }
+    if (!url) return c.redirect("/?notice=no_plan#account", 303);
     return c.redirect(url, 303);
   });
 
@@ -654,7 +688,32 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
         status: null,
       });
     }
-    return c.redirect("/?ok=revoked", 303);
+    return c.redirect("/?ok=revoked#agents", 303);
+  });
+
+  // The Edit form of an agent on the dashboard: a level for each area of each connection.
+  // `level:<connection>:<area>`, or `level:<connection>` for all the areas of the connection.
+  // catalog.js sends the form in the background and asks for JSON, so the page stays.
+  app.post("/apps/:id/access", async (c) => {
+    const form = await c.req.parseBody();
+    const current = viewer(deps, c);
+    const json = (c.req.header("accept") ?? "").includes("application/json");
+    if (!current) return json ? c.json({ ok: false }, 401) : c.redirect("/", 303);
+    if (!checkCsrf(current, form.csrf)) return c.text("The form expired. Go back and try again.", 403);
+    const appId = c.req.param("id");
+    const levels = new Map<string, Map<AreaId, AccessLevel | "off">>();
+    for (const [key, value] of Object.entries(form)) {
+      const [prefix, connectionId, area] = key.split(":");
+      if (prefix !== "level" || !connectionId || (value !== "read" && value !== "write" && value !== "off")) continue;
+      const areas = levels.get(connectionId) ?? new Map<AreaId, AccessLevel | "off">();
+      for (const id of area ? AREAS.filter((one) => one === area) : AREAS) areas.set(id, value);
+      levels.set(connectionId, areas);
+    }
+    const changed = setAgentAccess(deps, appId, current.user.id, levels);
+    const left = deps.store.grantsForAppUser(appId, current.user.id).length;
+    const removed = changed && left === 0;
+    if (json) return c.json({ ok: changed, removed, tools: left, total: deps.store.connectionsByUser(current.user.id).length });
+    return c.redirect(`/?ok=${removed ? "revoked" : "access"}#agents`, 303);
   });
 
   // The account: a copy of the data, and deletion

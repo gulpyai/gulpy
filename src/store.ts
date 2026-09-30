@@ -245,7 +245,8 @@ export interface User {
   createdAt: number;
 }
 
-export type PaidPlan = "personal" | "family" | "business";
+/** Pro is the plan for sale. Personal, Family and Business are older plans: a person who has one keeps it, with the Pro features. */
+export type PaidPlan = "pro" | "personal" | "family" | "business";
 
 /** The Stripe statuses in which the person has the plan. `past_due`: the card failed, Stripe tries again. */
 export const ACTIVE_STATUSES: readonly string[] = ["active", "trialing", "past_due"];

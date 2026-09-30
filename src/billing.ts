@@ -9,16 +9,23 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Deps } from "./deps.ts";
 import { ACTIVE_STATUSES, type PaidPlan, type Subscription, type User } from "./store.ts";
 
-export const PLANS: readonly PaidPlan[] = ["personal", "family", "business"];
+/** Each paid plan that Stripe can report. */
+export const PLANS: readonly PaidPlan[] = ["pro", "personal", "family", "business"];
+/** The plans for sale. */
+export const FOR_SALE: readonly PaidPlan[] = ["pro"];
 export const INTERVALS = ["monthly", "yearly"] as const;
 export type Interval = (typeof INTERVALS)[number];
 
 export const PLAN_NAMES: Record<PaidPlan | "free", string> = {
   free: "Free",
+  pro: "Pro",
   personal: "Personal",
   family: "Family",
   business: "Business",
 };
+
+/** The number of agents that a person on Free can approve. Pro has no limit. */
+export const FREE_AGENTS = 3;
 
 /** The list of calls of a person on Free goes back this many days. A paid plan keeps `LEGAL.callLogDays`. */
 export const FREE_HISTORY_DAYS = 7;
@@ -33,6 +40,10 @@ export function isPlan(value: unknown): value is PaidPlan {
   return typeof value === "string" && (PLANS as readonly string[]).includes(value);
 }
 
+export function isForSale(value: unknown): value is PaidPlan {
+  return typeof value === "string" && (FOR_SALE as readonly string[]).includes(value);
+}
+
 export function isInterval(value: unknown): value is Interval {
   return typeof value === "string" && (INTERVALS as readonly string[]).includes(value);
 }
@@ -45,6 +56,21 @@ export function billingOn(deps: Deps): boolean {
 /** True while the person has the plan. `past_due`: the card failed and Stripe tries again. */
 export function isPaid(subscription: Subscription | null): boolean {
   return subscription !== null && ACTIVE_STATUSES.includes(subscription.status);
+}
+
+/** True when the person has Pro, an older paid plan, or a Gulpy that sells no plans: no limits. */
+export function unlimited(deps: Deps, userId: string): boolean {
+  return !billingOn(deps) || isPaid(deps.store.subscription(userId));
+}
+
+/**
+ * True when the person can approve this agent: an agent that they approved before, a paid plan,
+ * or fewer than `FREE_AGENTS` agents on Free.
+ */
+export function agentAllowed(deps: Deps, userId: string, appId: string): boolean {
+  if (unlimited(deps, userId)) return true;
+  const agents = deps.store.agentsOfUser(userId, deps.now());
+  return agents.includes(appId) || agents.length < FREE_AGENTS;
 }
 
 export interface PlanView {

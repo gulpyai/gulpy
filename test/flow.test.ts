@@ -383,18 +383,18 @@ describe("the user is in control", () => {
     expect((await world.api("/email/messages", { token })).status).toBe(403);
   });
 
-  test("the dashboard shows what each app did", async () => {
+  test("the log records what each app did", async () => {
     const token = await connectFirstTime(world, browser, inboxPilot, { email: EMAIL, capabilities: ["email.read"] });
     const connection = (await world.api("/connections", { token })).body.connections[0].id;
     await world.api("/email/messages?q=private+search+words", { token });
     await world.api(`/proxy/${connection}/api/api/events`, { token });
 
-    const dashboard = await browser.open(`${GULPY}/`);
-    expect(dashboard.html).toContain("</strong> read email");
-    expect(dashboard.html).toContain("Blocked");
-    expect(dashboard.html).toContain("GET api/api/events");
+    const log = JSON.stringify(world.gulpy.deps.store.db.query("SELECT action, detail, status FROM audit_log").all());
+    expect(log).toContain('"action":"email.read"');
+    expect(log).toContain('"status":403');
+    expect(log).toContain("GET api/api/events");
     // The log records the action, not the content.
-    expect(dashboard.html).not.toContain("private");
+    expect(log).not.toContain("private");
   });
 
   test("an app gives up its access", async () => {

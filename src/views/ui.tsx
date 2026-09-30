@@ -210,7 +210,6 @@ const SiteFoot: FC = () => (
         <h2>Product</h2>
         <a href="/">My tools</a>
         <a href="/#how">How it works</a>
-        <a href="/developers">Developers</a>
       </nav>
       <nav class="foot-group" aria-label="Help">
         <h2>Help</h2>
@@ -252,9 +251,6 @@ export const SitePage: FC<
           <nav class="site-nav">
             <a href="/" aria-current={current === "tools" ? "page" : undefined}>
               My tools
-            </a>
-            <a href="/developers" aria-current={current === "developers" ? "page" : undefined}>
-              Developers
             </a>
             <span class="site-user">{viewer.user.email}</span>
             <form method="post" action="/auth/signout">

@@ -1,9 +1,9 @@
 import type { FC } from "hono/jsx";
 import type { Viewer } from "../auth.ts";
 import type { PlanView } from "../billing.ts";
-import { BRAND, PRICING_URL } from "../brand.ts";
+import { BRAND } from "../brand.ts";
 import { agentLogo, logoImage } from "../logos.ts";
-import { levelOf, type CapabilityId } from "../capabilities.ts";
+import { areaLevel, areasOf, areaWrites, type AccessLevel, type AreaId, type CapabilityId } from "../capabilities.ts";
 import { connectorNames, type CatalogGroup, type ConnectionView } from "../present.ts";
 import type { App, AuditEntry } from "../store.ts";
 import { CatalogGrid } from "./catalog.tsx";
@@ -87,14 +87,15 @@ export const Landing: FC<{ model: LandingModel }> = ({ model }) => {
   return (
     <SitePage title={BRAND.promise} viewer={null} current="none" script="/assets/hero.js" meta={model.meta}>
       <main class="landing" id="main">
-        <section class="hero">
+        {/* Start free and Sign in go to #start: the top of the page, with the cursor in the email field. */}
+        <section class="hero" id="start">
           <div class="hero-copy">
             <h1>{BRAND.promise}</h1>
             <p class="lede">
               ChatGPT, Claude and Grok each make you connect the same tools again. Connect them to {BRAND.name} one
               time. Then each new agent gets them with one tap.
             </p>
-            <div class="signin-card" id="start">
+            <div class="signin-card">
               <h2>{state.otpId ? "Check your email" : "Start free"}</h2>
               <SignInForm state={state} autofocus={false} />
             </div>
@@ -247,23 +248,21 @@ export interface DashboardModel {
   connections: ConnectionView[];
   catalog: CatalogGroup[];
   agents: AgentAccess[];
-  /** `target` is the tool that the event is about, for example "Notion". */
-  activity: {
-    entry: AuditEntry;
-    appName: string | null;
-    target: string | null;
-  }[];
   /** The address that the user gives to an agent. */
   mcpUrl: string;
-  /** True if an agent that Gulpy knows connects with no approval step. */
-  noTap: boolean;
-  /** True if only this computer can reach the address. */
-  local: boolean;
-  calls: number;
   now: number;
   notice?: { kind: "ok" | "warn"; text: string };
   /** The plan of the person. Undefined where this Gulpy sells no plans. */
   plan?: PlanView;
+  /** The number of agents that Free permits. Undefined with no limit: Pro, or a Gulpy that sells no plans. */
+  agentLimit?: number;
+  /** What the agents did. Only on Pro, and where this Gulpy sells no plans. */
+  activity?: {
+    entry: AuditEntry;
+    appName: string | null;
+    /** The tool that the event is about, for example "Notion". */
+    target: string | null;
+  }[];
 }
 
 const ACTIONS: Record<string, string> = {
@@ -283,41 +282,12 @@ const ACTIONS: Record<string, string> = {
 
 const Hidden: FC<{ viewer: Viewer }> = ({ viewer }) => <input type="hidden" name="csrf" value={viewer.csrf} />;
 
-const GUIDES = [
-  {
-    id: "claude",
-    name: "Claude",
-    logo: "claude",
-    steps: [
-      "Open Customize, then Connectors.",
-      'Select "+", then "Add custom connector".',
-      "Paste the address. Select Add, then Connect.",
-    ],
-  },
-  {
-    id: "chatgpt",
-    name: "ChatGPT",
-    logo: "chatgpt",
-    steps: [
-      "Open Settings, then Security and login. Turn on Developer mode.",
-      "Select the plus button and create an app for a remote MCP server.",
-      "Paste the address and sign in.",
-    ],
-  },
-  {
-    id: "grok",
-    name: "Grok",
-    logo: "grok",
-    steps: ["Open grok.com/connectors.", "Select New Connector, then Custom.", "Paste the address and sign in."],
-  },
-] as const;
-
-/** The plan of the person, with the way to change it. */
-const PlanLine: FC<{ plan: PlanView; viewer: Viewer; now: number }> = ({ plan, viewer }) => (
+/** A paid plan, with the way to change it or cancel it. */
+const PlanLine: FC<{ plan: PlanView; viewer: Viewer }> = ({ plan, viewer }) => (
   <div class="plan-line">
     <span>
       Plan: <strong>{plan.name}</strong>
-      {plan.plan !== "free" && plan.interval && <span class="muted"> · Billed {plan.interval}</span>}
+      {plan.interval && <span class="muted"> · Billed {plan.interval}</span>}
       {plan.plan === "business" && plan.quantity > 1 && <span class="muted"> · {plan.quantity} users</span>}
       {plan.periodEnd && (
         <span class="muted">
@@ -326,90 +296,89 @@ const PlanLine: FC<{ plan: PlanView; viewer: Viewer; now: number }> = ({ plan, v
         </span>
       )}
     </span>
+    {plan.manage && (
+      <form method="post" action="/billing/portal">
+        <Hidden viewer={viewer} />
+        <button class="btn btn-secondary btn-small" type="submit">
+          Manage plan
+        </button>
+      </form>
+    )}
+  </div>
+);
+
+/** Free: the agents that are left, and the way to Pro. */
+const FreeLine: FC<{ used: number; limit: number; viewer: Viewer; invoices: boolean }> = ({ used, limit, viewer, invoices }) => (
+  <div class="plan-line">
+    <span>
+      Plan: <strong>Free</strong>
+      <span class="muted">
+        {" "}
+        · {Math.min(used, limit)} of {limit} agents
+      </span>
+    </span>
     <span class="plan-actions">
-      {plan.plan === "free" && (
-        <a class="btn btn-secondary btn-small" href={PRICING_URL}>
-          See the plans
-        </a>
-      )}
-      {plan.manage && (
+      {/* A person who paid before can still get the invoices. */}
+      {invoices && (
         <form method="post" action="/billing/portal">
           <Hidden viewer={viewer} />
           <button class="btn btn-secondary btn-small" type="submit">
-            {plan.plan === "free" ? "Invoices" : "Manage plan"}
+            Invoices
           </button>
         </form>
       )}
+      <a class="btn btn-primary btn-small" href="/billing/checkout?plan=pro&interval=monthly">
+        Upgrade to Pro · $10/month
+      </a>
     </span>
   </div>
 );
 
-/** What the user says to an agent on this computer, for example Claude Code or Codex. See src/device.ts. */
+const Activity: FC<{ model: DashboardModel }> = ({ model }) =>
+  !model.activity || model.activity.length === 0 ? (
+    <p class="panel-empty">No activity yet.</p>
+  ) : (
+    <ul class="feed">
+      {model.activity.map(({ entry, appName, target }) => (
+        <li>
+          <span class={`dot${entry.status !== null && entry.status >= 400 ? " dot-warn" : ""}`} />
+          <span class="feed-text">
+            <strong>{appName ?? "You"}</strong> {(ACTIONS[entry.action] ?? entry.action).toLowerCase()}
+            {(entry.action === "proxy" || entry.action === "tool") && entry.detail ? (
+              <code>{entry.detail}</code>
+            ) : target ? (
+              <span>
+                · {target}
+                {entry.action === "grant.approve" && entry.detail ? ` · ${entry.detail}` : ""}
+              </span>
+            ) : null}
+            {entry.status !== null && entry.status >= 400 && (
+              <span class="chip chip-warn">{entry.status === 403 ? "Blocked" : `Error ${entry.status}`}</span>
+            )}
+          </span>
+          <time>{timeAgo(entry.ts, model.now)}</time>
+        </li>
+      ))}
+    </ul>
+  );
+
+/** What the user pastes into any agent. agents.md tells the agent the way that fits it. See src/guide.ts. */
 function connectSentence(mcpUrl: string): string {
   return `Connect to ${BRAND.name}. Read ${mcpUrl.replace(/\/mcp$/, "")}/agents.md and follow it.`;
 }
 
 const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
   <section class="panel guide">
-    <div class="guide-main">
-      <div>
-        <h2>
-          {model.connections.length > 0 ? `Add ${BRAND.name} to an agent` : `Step 2. Add ${BRAND.name} to an agent`}
-        </h2>
-        <p class="muted">
-          Say this to an agent on your computer, for example Claude Code, Codex or Cursor. A window opens. Tap Allow,
-          and the agent has all your tools.
-        </p>
-      </div>
-      <div class="address address-wrap">
-        <code data-copy-text>{connectSentence(model.mcpUrl)}</code>
-        <button class="copy" type="button" data-copy aria-label="Copy the sentence">
-          <Icon name="copy" />
-          <span data-copy-label>Copy</span>
-        </button>
-      </div>
-      <p class="muted">
-        {model.noTap
-          ? `For ChatGPT, Claude and Grok in the browser, paste this address. The agent opens ${BRAND.name} and gets your tools.`
-          : `For ChatGPT, Claude and Grok in the browser, paste this address. The agent opens ${BRAND.name}, and you tap Allow.`}
-      </p>
-      <div class="address">
-        <code data-copy-text>{model.mcpUrl}</code>
-        <button class="copy" type="button" data-copy aria-label="Copy the address">
-          <Icon name="copy" />
-          <span data-copy-label>Copy</span>
-        </button>
-      </div>
-      {model.local && (
-        <p class="guide-note">
-          These addresses work on this computer only. ChatGPT, Claude and Grok need a public address.
-        </p>
-      )}
+    <div class="guide-text">
+      <h2>Add {BRAND.name} to any AI</h2>
+      <p>Copy this into the chat. Tap Allow.</p>
     </div>
-    <div class="guide-steps">
-      {GUIDES.map((guide) => (
-        <details name="guide" open={guide.id === "claude"}>
-          <summary>
-            <Avatar label={guide.name} image={logoImage(guide.logo)} />
-            {guide.name}
-          </summary>
-          <ol>
-            {guide.steps.map((step) => (
-              <li>{step}</li>
-            ))}
-          </ol>
-        </details>
-      ))}
-      <details name="guide">
-        <summary>
-          <Avatar label="Claude Code" image={logoImage("claude")} />
-          Claude Code, Codex, Cursor
-        </summary>
-        <ol>
-          <li>Say the sentence above to the agent. Or run this in a terminal:</li>
-        </ol>
-        <pre class="command">curl -fsSL {model.mcpUrl.replace(/\/mcp$/, "")}/connect.sh | sh</pre>
-      </details>
+    <div class="address address-wrap">
+      <code data-copy-text>{connectSentence(model.mcpUrl)}</code>
+      <button class="copy" type="button" data-copy aria-label="Copy the sentence">
+        <Icon name="copy" />
+        <span data-copy-label>Copy</span>
+      </button>
     </div>
   </section>
 );
@@ -431,11 +400,7 @@ const ConnectionRow: FC<{ view: ConnectionView; viewer: Viewer }> = ({ view, vie
           {view.tools ? ` · ${view.tools.total} tools` : ""}
         </span>
       </div>
-      {connection.status === "needs_reauth" ? (
-        <span class="chip chip-warn">Sign in again</span>
-      ) : (
-        <span class="chip chip-ok">Connected</span>
-      )}
+      {connection.status === "needs_reauth" && <span class="chip chip-warn">Sign in again</span>}
       <div class="row-actions">
         {connection.status === "needs_reauth" && (
           <a class="btn btn-light btn-small" href={`/connect/${reconnect}?connection=${connection.id}`}>
@@ -453,9 +418,139 @@ const ConnectionRow: FC<{ view: ConnectionView; viewer: Viewer }> = ({ view, vie
   );
 };
 
+/** The names of the areas of a Google or a Microsoft account. The tools of an MCP server have the name of the connection. */
+const AREA_NAMES: Record<string, Partial<Record<AreaId, string>>> = {
+  google: { email: "Gmail", calendar: "Google Calendar", files: "Google Drive" },
+  microsoft: { email: "Outlook", calendar: "Outlook Calendar", files: "OneDrive" },
+};
+const DEFAULT_AREA_NAMES: Partial<Record<AreaId, string>> = { email: "Email", calendar: "Calendar", files: "Files" };
+
+const WRITE_LABELS: Record<AreaId, string> = {
+  email: "Read & send",
+  calendar: "Read & edit",
+  files: "Read & write",
+  tools: "Read & write",
+};
+
+/** Off, Read, and Read & write for one area of one connection. Tapping a choice saves it (catalog.js). */
+const Levels: FC<{ name: string; label: string; area: AreaId; current: AccessLevel | "off"; writes: boolean }> = ({
+  name,
+  label,
+  area,
+  current,
+  writes,
+}) => (
+  <span class="segmented" role="radiogroup" aria-label={label}>
+    {(
+      [
+        ["off", "Off"],
+        ["read", "Read"],
+        ...(writes ? [["write", WRITE_LABELS[area]]] : []),
+      ] as [AccessLevel | "off", string][]
+    ).map(([value, text]) => (
+      <label>
+        <input type="radio" name={name} value={value} checked={current === value || (!writes && value === "read" && current === "write")} />
+        <span>{text}</span>
+      </label>
+    ))}
+  </span>
+);
+
+/** One connection in the Edit form. A Google account has a row for Gmail, Calendar and Drive. */
+const AccessRows: FC<{ view: ConnectionView; granted: readonly CapabilityId[] }> = ({ view, granted }) => {
+  const { connection } = view;
+  const areas = areasOf(connection.capabilities);
+  const title = view.tools ? view.name : connectorNames(view);
+  const names = AREA_NAMES[connection.provider] ?? DEFAULT_AREA_NAMES;
+  const levels = (area: AreaId) => (
+    <Levels
+      name={`level:${connection.id}:${area}`}
+      label={`${names[area] ?? title}: access`}
+      area={area}
+      current={areaLevel(area, granted)}
+      writes={areaWrites(area, connection.capabilities)}
+    />
+  );
+  if (areas.length === 1) {
+    return (
+      <li>
+        <ConnectorIcon logo={view.logo} small />
+        <span class="access-name">
+          {title}
+          <small>{connection.accountLabel}</small>
+        </span>
+        {levels(areas[0]!)}
+      </li>
+    );
+  }
+  return (
+    <li class="access-group">
+      <div class="access-head">
+        <ConnectorIcon logo={view.logo} small />
+        <span class="access-name">
+          {title}
+          <small>{connection.accountLabel}</small>
+        </span>
+      </div>
+      <ul>
+        {areas.map((area) => (
+          <li>
+            <span class="access-name">{names[area] ?? title}</span>
+            {levels(area)}
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+};
+
+function toolCount(shared: number, total: number): string {
+  return shared === total ? `All ${total} tools` : `${shared} of ${total} tools`;
+}
+
+/** One agent: a short line, and the Edit form with one choice for each part of each tool. */
+const AgentRow: FC<{ agent: AgentAccess; model: DashboardModel; viewer: Viewer }> = ({ agent, model, viewer }) => {
+  const { app, shares, lastUsed } = agent;
+  const granted = new Map(shares.map((share) => [share.view.connection.id, share.capabilities]));
+  return (
+    <li class="agent">
+      <details>
+        <summary>
+          <Avatar label={app.name} image={agentLogo(app.redirectUris)} />
+          <span class="row-text">
+            <strong>{app.name}</strong>
+            <span>
+              <span data-agent-count>{toolCount(shares.length, model.connections.length)}</span> ·{" "}
+              {lastUsed ? `Last used ${timeAgo(lastUsed, model.now)}` : "Not used yet"}
+            </span>
+          </span>
+          <span class="btn btn-light btn-small agent-edit">Edit</span>
+        </summary>
+        <form method="post" action={`/apps/${app.id}/access`} class="access" data-access>
+          <Hidden viewer={viewer} />
+          <ul class="access-list">
+            {model.connections.map((view) => (
+              <AccessRows view={view} granted={granted.get(view.connection.id) ?? []} />
+            ))}
+          </ul>
+          <div class="access-actions">
+            <button class="btn btn-dark btn-small" type="submit" data-access-save>
+              Save
+            </button>
+            <span class="access-status" data-access-status role="status" aria-live="polite" />
+            <button class="btn btn-danger-quiet btn-small" type="submit" formaction={`/apps/${app.id}/revoke`}>
+              Remove access
+            </button>
+          </div>
+        </form>
+      </details>
+    </li>
+  );
+};
+
 export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewer, model }) => (
   <SitePage title="My tools" viewer={viewer} current="tools" script="/assets/catalog.js">
-    <main class="site-main" id="main">
+    <main class="site-main dash" id="main">
       {model.notice && (
         <div class={`toast toast-${model.notice.kind}`} role="status">
           {model.notice.kind === "ok" && <Mascot size="small" mood="gulp" />}
@@ -463,154 +558,110 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
         </div>
       )}
 
-      <section class="summary">
-        <div class="summary-title">
-          <h1>My tools</h1>
-          <p class="muted">
-            {model.noTap
-              ? "Connect a tool one time. Each of your agents gets it."
-              : "Connect a tool one time. Approve each agent with one tap."}
-          </p>
+      <Guide model={model} />
+
+      {/* The panels have ids with "tab-", so the browser does not scroll to them. catalog.js shows the panel of the #hash. */}
+      <div class="tabs" role="tablist" data-tabs>
+        <a href="#tools" role="tab" data-tab-link="tools">
+          Tools <span class="count">{model.connections.length}</span>
+        </a>
+        <a href="#agents" role="tab" data-tab-link="agents">
+          Agents <span class="count">{model.agents.length}</span>
+        </a>
+        {model.activity && (
+          <a href="#activity" role="tab" data-tab-link="activity">
+            Activity
+          </a>
+        )}
+        <a href="#account" role="tab" data-tab-link="account">
+          Account
+        </a>
+      </div>
+
+      <section class="tab-panel" id="tab-tools" role="tabpanel" data-tab="tools">
+        {model.connections.length > 0 && (
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Connected</h2>
+            </div>
+            <ul class="rows">
+              {model.connections.map((view) => (
+                <ConnectionRow view={view} viewer={viewer} />
+              ))}
+            </ul>
+          </div>
+        )}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>{model.connections.length > 0 ? "Add a tool" : "Add your first tool"}</h2>
+              <p>You sign in at the tool. {BRAND.name} never sees your password.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <CatalogGrid groups={model.catalog} next="/" />
+          </div>
         </div>
-        <ul class="stats">
-          <li>
-            <strong>{model.connections.length}</strong>
-            <span>{model.connections.length === 1 ? "tool connected" : "tools connected"}</span>
-          </li>
-          <li>
-            <strong>{model.agents.length}</strong>
-            <span>{model.agents.length === 1 ? "agent with access" : "agents with access"}</span>
-          </li>
-          <li>
-            <strong>{model.calls}</strong>
-            <span>{model.calls === 1 ? "call in 7 days" : "calls in 7 days"}</span>
-          </li>
-        </ul>
       </section>
 
-      {model.connections.length > 0 && <Guide model={model} />}
-
-      {model.connections.length > 0 && (
-        <section class="panel">
+      <section class="tab-panel" id="tab-agents" role="tabpanel" data-tab="agents">
+        <div class="panel">
           <div class="panel-head">
-            <h2>Connected</h2>
+            <div>
+              <h2>Agents</h2>
+              <p>
+                Each agent uses only what you allow. Select Edit to change it.
+                {model.agentLimit !== undefined &&
+                  ` Free has ${model.agentLimit} agents. Pro has no limit.`}
+              </p>
+            </div>
           </div>
-          <ul class="rows">
-            {model.connections.map((view) => (
-              <ConnectionRow view={view} viewer={viewer} />
-            ))}
-          </ul>
+          {model.agents.length === 0 ? (
+            <p class="panel-empty">No agent yet. Copy the sentence above into any AI.</p>
+          ) : (
+            <ul class="rows agents">
+              {model.agents.map((agent) => (
+                <AgentRow agent={agent} model={model} viewer={viewer} />
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {model.activity && (
+        <section class="tab-panel" id="tab-activity" role="tabpanel" data-tab="activity">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Activity</h2>
+                <p>What each agent did. {BRAND.name} records the action, not the content.</p>
+              </div>
+            </div>
+            <Activity model={model} />
+          </div>
         </section>
       )}
 
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>{model.connections.length > 0 ? "Add a tool" : "Step 1. Add your first tool"}</h2>
-            <p>You sign in at the provider. {BRAND.name} does not see your password.</p>
+      <section class="tab-panel" id="tab-account" role="tabpanel" data-tab="account">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Account</h2>
+              <p>
+                {viewer.user.email} · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
+              </p>
+            </div>
           </div>
-        </div>
-        <div class="panel-body">
-          <CatalogGrid groups={model.catalog} next="/" />
-        </div>
-      </section>
-
-      {model.connections.length === 0 && <Guide model={model} />}
-
-      <section class="panel" id="agents">
-        <div class="panel-head">
-          <div>
-            <h2>Agents</h2>
-            <p>Each agent can use only what you approved.</p>
+          {model.agentLimit !== undefined && <FreeLine used={model.agents.length} limit={model.agentLimit} viewer={viewer} invoices={model.plan?.manage ?? false} />}
+          {model.plan && model.plan.plan !== "free" && <PlanLine plan={model.plan} viewer={viewer} />}
+          <div class="account-actions">
+            <a class="btn btn-secondary" href="/account/export">
+              Download my data
+            </a>
+            <a class="btn btn-danger-quiet" href="/account/delete">
+              Delete my account
+            </a>
           </div>
-        </div>
-        {model.agents.length === 0 ? (
-          <p class="panel-empty">No agent has access yet. Add {BRAND.name} to an agent with the address above.</p>
-        ) : (
-          <ul class="rows">
-            {model.agents.map(({ app, shares, lastUsed }) => (
-              <li class="row-top">
-                <Avatar label={app.name} image={agentLogo(app.redirectUris)} />
-                <div class="row-text">
-                  <strong>{app.name}</strong>
-                  <span>{lastUsed ? `Last call ${timeAgo(lastUsed, model.now)}` : "No calls yet"}</span>
-                  <div class="shares">
-                    {shares.map((share) => (
-                      <span class="share">
-                        <ConnectorIcon logo={share.view.logo} small />
-                        {share.view.name}
-                        <em>{levelOf(share.capabilities) === "write" ? "Read and write" : "Read only"}</em>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div class="row-actions">
-                  <form method="post" action={`/apps/${app.id}/revoke`}>
-                    <Hidden viewer={viewer} />
-                    <button class="btn btn-quiet btn-small" type="submit">
-                      Remove access
-                    </button>
-                  </form>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section class="panel" id="activity">
-        <div class="panel-head">
-          <div>
-            <h2>Activity</h2>
-            <p>{BRAND.name} records the action, not the content.</p>
-          </div>
-        </div>
-        {model.activity.length === 0 ? (
-          <p class="panel-empty">No activity yet.</p>
-        ) : (
-          <ul class="feed">
-            {model.activity.map(({ entry, appName, target }) => (
-              <li>
-                <span class={`dot${entry.status !== null && entry.status >= 400 ? " dot-warn" : ""}`} />
-                <span class="feed-text">
-                  <strong>{appName ?? "You"}</strong> {(ACTIONS[entry.action] ?? entry.action).toLowerCase()}
-                  {(entry.action === "proxy" || entry.action === "tool") && entry.detail ? (
-                    <code>{entry.detail}</code>
-                  ) : target ? (
-                    <span>
-                      · {target}
-                      {entry.action === "grant.approve" && entry.detail ? ` · ${entry.detail}` : ""}
-                    </span>
-                  ) : null}
-                  {entry.status !== null && entry.status >= 400 && (
-                    <span class="chip chip-warn">{entry.status === 403 ? "Blocked" : `Error ${entry.status}`}</span>
-                  )}
-                </span>
-                <time>{timeAgo(entry.ts, model.now)}</time>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section class="panel" id="account">
-        <div class="panel-head">
-          <div>
-            <h2>Your account</h2>
-            <p>
-              {viewer.user.email} · You accepted the <a href="/terms">Terms</a> and the <a href="/privacy">Privacy</a>{" "}
-              page when you signed in.
-            </p>
-          </div>
-        </div>
-        {model.plan && <PlanLine plan={model.plan} viewer={viewer} now={model.now} />}
-        <div class="account-actions">
-          <a class="btn btn-secondary" href="/account/export">
-            Download my data
-          </a>
-          <a class="btn btn-danger-quiet" href="/account/delete">
-            Delete my account
-          </a>
         </div>
       </section>
     </main>
