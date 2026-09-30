@@ -79,6 +79,7 @@ export async function createWorld(
     connectorClients: {},
     stripe: options.stripe,
     autoApprove: options.autoApprove ?? true,
+    redirectHosts: ["old.gulpy.test"],
   };
 
   // A mail provider and MCP connectors for the tests. The product has none of them.

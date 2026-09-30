@@ -63,6 +63,17 @@ export async function createApp(deps: Deps): Promise<GulpyApp> {
   const gulpy = new Gulpy(deps, vault);
   const app = new Hono();
 
+  // An old address of this server. 308 keeps the method and the body, so an agent that POSTs to /mcp follows it.
+  if (deps.config.redirectHosts.length > 0) {
+    const old = new Set(deps.config.redirectHosts);
+    app.use("*", async (c, next) => {
+      const host = (c.req.header("host") ?? "").toLowerCase();
+      if (!old.has(host)) return next();
+      const url = new URL(c.req.url);
+      return c.redirect(`${deps.config.baseUrl}${url.pathname}${url.search}`, 308);
+    });
+  }
+
   // On the real address, the browser must use https for one year, also when a person types http.
   if (deps.config.baseUrl.startsWith("https://")) {
     app.use("*", async (c, next) => {

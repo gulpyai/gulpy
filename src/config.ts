@@ -26,6 +26,8 @@ export interface Config {
   masterKey: Buffer;
   /** Gulpy writes a copy of the database to this folder each day. Not set: no copies. */
   backupDir?: string;
+  /** Other host names of this server, for example an old address. Gulpy sends each request on them to `baseUrl`. */
+  redirectHosts: string[];
   google?: ProviderCredentials;
   microsoft?: ProviderCredentials;
   /**
@@ -142,6 +144,12 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     dbPath: overrides.dbPath ?? process.env.GULPY_DB ?? ".data/gulpy.db",
     masterKey: overrides.masterKey ?? loadMasterKey(env),
     backupDir: overrides.backupDir ?? (process.env.GULPY_BACKUP_DIR || undefined),
+    redirectHosts:
+      overrides.redirectHosts ??
+      (process.env.GULPY_REDIRECT_HOSTS ?? "")
+        .split(",")
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean),
     google: overrides.google ?? credentials(env, "GOOGLE"),
     microsoft: overrides.microsoft ?? credentials(env, "MICROSOFT"),
     rawProxy:

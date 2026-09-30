@@ -433,3 +433,15 @@ describe("input checks", () => {
     expect(await response.text()).not.toMatch(/<script(?![^>]*\bsrc=)/);
   });
 });
+
+describe("old address", () => {
+  test("a request on an old host name goes to the real address, with the method kept", async () => {
+    const response = await world.gulpy.app.fetch(
+      new Request("https://old.gulpy.test/mcp?x=1", { method: "POST", headers: { host: "old.gulpy.test" } }),
+    );
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(`${GULPY}/mcp?x=1`);
+    const normal = await world.gulpy.app.fetch(new Request(`${GULPY}/health`, { headers: { host: "gulpy.test" } }));
+    expect(normal.status).toBe(200);
+  });
+});
