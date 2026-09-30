@@ -26,7 +26,8 @@ function securityText(baseUrl: string, now: number): string {
 export function infoRoutes(deps: Deps): Hono {
   const app = new Hono();
   const { baseUrl } = deps.config;
-  const real = baseUrl.startsWith("https://");
+  // The test copy (test.gulpy.ai) stays out of search engines.
+  const real = baseUrl.startsWith("https://") && !new URL(baseUrl).hostname.startsWith("test.");
 
   const model = (c: Context): InfoModel => ({
     viewer: viewer(deps, c),
