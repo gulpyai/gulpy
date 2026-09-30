@@ -62,14 +62,8 @@ const browser = Bun.spawn(
   [`${process.env.HOME}/.local/py/bin/python`, join(import.meta.dir, "connect-all.py"), GULPY, join(import.meta.dir, "../../extension")],
   { stdout: "pipe", stderr: "inherit" },
 );
-// The browser part asks for the sign-in code on stdin, and prints the result on stdout.
-const out: string[] = [];
-const decoder = new TextDecoder();
-for await (const chunk of browser.stdout) {
-  const text = decoder.decode(chunk);
-  out.push(text);
-  process.stdout.write(text);
-}
+// The browser part prints each row and the summary.
+process.stdout.write(await new Response(browser.stdout).text());
 await browser.exited;
 
 const user = gulpy.deps.store.userByEmail("e2e@example.com");
