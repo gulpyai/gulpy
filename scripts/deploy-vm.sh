@@ -86,6 +86,8 @@ rsync -az --delete -e "ssh -o LogLevel=ERROR" \
 
 # 5. Build and start.
 remote "cd $DIR && sudo docker compose -f deploy/compose.yml up -d --build --remove-orphans 2>&1 | tail -5"
+# The tunnel reads its list of host names only at start.
+remote "cd $DIR && sudo docker compose -f deploy/compose.yml restart tunnel 2>&1 | tail -1"
 
 # 6. Check from the server, through the public address.
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
