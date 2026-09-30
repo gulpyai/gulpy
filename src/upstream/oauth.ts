@@ -101,11 +101,13 @@ export async function upstream(deps: Deps, connector: Connector): Promise<Upstre
   const url = urlOf(connector);
   const redirectUri = mcpRedirectUri(deps);
   const saved = deps.store.upstreamClient(connector.id);
-  if (saved && saved.redirectUri === redirectUri) {
-    const stored = JSON.parse(open(clientKey(deps), saved.clientEnc, connector.id)) as {
-      client: OAuthClientInformationMixed;
-      scope?: string;
-    };
+  const configured = deps.config.connectorClients[connector.id];
+  const stored = saved
+    ? (JSON.parse(open(clientKey(deps), saved.clientEnc, connector.id)) as { client: OAuthClientInformationMixed; scope?: string })
+    : null;
+  // An app that the operator registered wins over the stored one: after a change of keys, use the new app.
+  const current = !configured || stored?.client.client_id === configured.clientId;
+  if (saved && stored && saved.redirectUri === redirectUri && current) {
     return {
       connector,
       url,
@@ -119,7 +121,6 @@ export async function upstream(deps: Deps, connector: Connector): Promise<Upstre
   }
 
   const found = await discover(deps, url);
-  const configured = deps.config.connectorClients[connector.id];
   let client: OAuthClientInformationMixed;
   if (configured) {
     client = { client_id: configured.clientId, client_secret: configured.clientSecret };
