@@ -27,7 +27,7 @@ console.log(`[gulpy] ${config.baseUrl} (${config.env})`);
 console.log(`[gulpy] providers: ${[...deps.providers.keys()].join(", ") || "none"}`);
 console.log(
   config.stripe
-    ? `[gulpy] paid plans: on (${config.stripe.secretKey.startsWith("sk_live_") ? "live" : "test"} mode)`
+    ? `[gulpy] paid plans: on (${/^[sr]k_live_/.test(config.stripe.secretKey) ? "live" : "test"} mode)`
     : "[gulpy] paid plans: off. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET to sell plans.",
 );
 console.log(`[gulpy] approval: ${config.autoApprove ? "automatic for known agents" : "the user approves each agent"}`);
