@@ -98,7 +98,7 @@ them, Gulpy must have a public `https` address. Set `GULPY_BASE_URL` to it.
 
 ## Real connectors
 
-The list has 34 real connectors. On 2026-09-29 each MCP address answered with its
+The list has 63 real connectors. On 2026-09-29 each MCP address answered with its
 sign-in metadata.
 
 | Group | Count | What you must do |

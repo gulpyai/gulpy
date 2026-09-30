@@ -31,9 +31,9 @@ import type { CapabilityId } from "./capabilities.ts";
 import type { Config } from "./config.ts";
 import { logoImage, type LogoImage } from "./logos.ts";
 
-export type Category = "Work" | "Engineering" | "Sales and support" | "Design" | "Finance" | "Data";
+export type Category = "Work" | "Meetings" | "Engineering" | "Sales and support" | "Design" | "Finance" | "Data" | "Personal";
 
-export const CATEGORIES: Category[] = ["Work", "Engineering", "Sales and support", "Design", "Finance", "Data"];
+export const CATEGORIES: Category[] = ["Work", "Meetings", "Engineering", "Sales and support", "Design", "Finance", "Data", "Personal"];
 
 export type ConnectorSource =
   /** Gulpy calls the provider API and supplies its own tools. */
@@ -119,7 +119,7 @@ const CONNECTORS: Connector[] = [
   mcp("clickup", "ClickUp", "Tasks, docs and goals", "Work", "https://mcp.clickup.com/mcp", siClickup),
   mcp("airtable", "Airtable", "Bases, tables and records", "Work", "https://mcp.airtable.com/mcp", siAirtable),
   mcp("slack", "Slack", "Messages and channels", "Work", "https://mcp.slack.com/mcp", "4A154B", "static"),
-  mcp("granola", "Granola", "Meeting notes", "Work", "https://mcp.granola.ai/mcp", "5B7C3A"),
+  mcp("granola", "Granola", "Meeting notes", "Meetings", "https://mcp.granola.ai/mcp", "5B7C3A"),
   mcp("box", "Box", "Files and folders", "Work", "https://mcp.box.com", siBox, "static"),
 
   mcp("github", "GitHub", "Repositories, issues and pull requests", "Engineering", "https://api.githubcopilot.com/mcp/", siGithub, "static"),
@@ -149,6 +149,37 @@ const CONNECTORS: Connector[] = [
   mcp("square", "Square", "Payments, orders and catalog", "Finance", "https://mcp.squareup.com/mcp", siSquare),
 
   mcp("posthog", "PostHog", "Product analytics and feature flags", "Data", "https://mcp.posthog.com/mcp", siPosthog),
+
+  // Added 2026-09-30. Each address answered with OAuth metadata and a registration endpoint.
+  mcp("todoist", "Todoist", "Tasks and projects", "Work", "https://ai.todoist.net/mcp", "E44332"),
+  mcp("ticktick", "TickTick", "Tasks and habits", "Work", "https://mcp.ticktick.com", "4772FA"),
+  mcp("calendly", "Calendly", "Scheduling links and bookings", "Work", "https://mcp.calendly.com", "006BFF"),
+  mcp("cal-com", "Cal.com", "Scheduling and bookings", "Work", "https://mcp.cal.com/mcp", "111827"),
+  mcp("evernote", "Evernote", "Notes and notebooks", "Work", "https://mcp.evernote.com/mcp", "00A82D"),
+  mcp("readwise", "Readwise", "Highlights and saved articles", "Work", "https://mcp2.readwise.io/mcp", "1D1D1F"),
+  mcp("coda", "Coda", "Docs and tables", "Work", "https://coda.io/apis/mcp", "F46A54"),
+  mcp("zapier", "Zapier", "Actions in 8,000 apps", "Work", "https://mcp.zapier.com/api/v1/connect", "FF4F00"),
+  mcp("fireflies", "Fireflies", "Meeting transcripts", "Meetings", "https://api.fireflies.ai/mcp", "6B2BFF"),
+  mcp("otter", "Otter", "Meeting notes", "Meetings", "https://mcp.otter.ai/mcp", "1F5CFF"),
+  mcp("fathom", "Fathom", "Meeting recordings and notes", "Meetings", "https://api.fathom.ai/mcp", "00BFA5"),
+  mcp("circleback", "Circleback", "Meeting notes and actions", "Meetings", "https://circleback.ai/api/mcp", "3A3A3A"),
+  mcp("tldv", "tl;dv", "Meeting recordings", "Meetings", "https://mcp.tldv.io/mcp", "5A3FFF"),
+  mcp("wispr-flow", "Wispr Flow", "Meeting notes from Flow", "Meetings", "https://api.wisprflow.ai/connect/mcp", "111111"),
+  mcp("close", "Close", "CRM leads and deals", "Sales and support", "https://mcp.close.com/mcp", "2F5BEA"),
+  mcp("apollo", "Apollo", "Contacts and outreach", "Sales and support", "https://mcp.apollo.io/mcp", "F7C744"),
+  mcp("klaviyo", "Klaviyo", "Email and SMS marketing", "Sales and support", "https://mcp.klaviyo.com/mcp", "232426"),
+  mcp("jam", "Jam", "Bug reports", "Engineering", "https://mcp.jam.dev/mcp", "F2C94C"),
+  mcp("cloudflare", "Cloudflare", "Workers, storage and DNS", "Engineering", "https://bindings.mcp.cloudflare.com/mcp", "F38020"),
+  mcp("hugging-face", "Hugging Face", "Models, datasets and papers", "Engineering", "https://huggingface.co/mcp", "FFD21E"),
+  mcp("mercury", "Mercury", "Bank accounts and transactions", "Finance", "https://mcp.mercury.com/mcp", "5466F9"),
+  mcp("brex", "Brex", "Cards and expenses", "Finance", "https://api.brex.com/mcp", "F46A35"),
+  mcp("ramp", "Ramp", "Cards, bills and expenses", "Finance", "https://mcp.ramp.com/mcp", "E4F222"),
+  mcp("amplitude", "Amplitude", "Product analytics", "Data", "https://mcp.amplitude.com/mcp", "1E61F0"),
+  mcp("mixpanel", "Mixpanel", "Product analytics", "Data", "https://mcp.mixpanel.com/mcp", "7856FF"),
+  mcp("hex", "Hex", "Data notebooks", "Data", "https://app.hex.tech/mcp", "473982"),
+  mcp("perplexity", "Perplexity", "Web search with sources", "Data", "https://api.perplexity.ai/mcp", "20808D"),
+  mcp("exa", "Exa", "Web search for agents", "Data", "https://mcp.exa.ai/mcp", "1F40ED"),
+  mcp("strava", "Strava", "Workouts and activities", "Personal", "https://mcp.strava.com/mcp", "FC4C02"),
 ];
 
 /** An MCP connector that is not in the built-in list. The operator supplies the address. */

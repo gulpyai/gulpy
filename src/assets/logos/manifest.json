@@ -4,6 +4,16 @@
     "kind": "mark",
     "source": "https://www.airtable.com/images/favicon/baymax/apple-touch-icon.png"
   },
+  "amplitude": {
+    "file": "amplitude.png",
+    "kind": "fill",
+    "source": "https://amplitude.com/nextjs-public/favicon/android-chrome-512x512.png"
+  },
+  "apollo": {
+    "file": "apollo.png",
+    "kind": "fill",
+    "source": "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://apollo.io&size=256"
+  },
   "asana": {
     "file": "asana.png",
     "kind": "mark",
@@ -24,6 +34,21 @@
     "kind": "fill",
     "source": "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.box.com&size=256"
   },
+  "brex": {
+    "file": "brex.png",
+    "kind": "fill",
+    "source": "https://brex.com/apple-touch-icon.png"
+  },
+  "cal-com": {
+    "file": "cal-com.png",
+    "kind": "fill",
+    "source": "https://framerusercontent.com/images/63tSo3fa0ylcjt88Er8WTEPS6Dw.png"
+  },
+  "calendly": {
+    "file": "calendly.png",
+    "kind": "fill",
+    "source": "https://calendly.com/media/favicon/icon-512x512.png"
+  },
   "canva": {
     "file": "canva.png",
     "kind": "fill",
@@ -33,6 +58,11 @@
     "file": "chatgpt.png",
     "kind": "mark",
     "source": "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://chatgpt.com&size=256"
+  },
+  "circleback": {
+    "file": "circleback.png",
+    "kind": "mark",
+    "source": "https://circleback.ai/logos/circleback_square.png"
   },
   "claude": {
     "file": "claude.png",
@@ -44,15 +74,50 @@
     "kind": "fill",
     "source": "https://clickup.com/favicons/apple-touch-icon.png"
   },
+  "close": {
+    "file": "close.png",
+    "kind": "mark",
+    "source": "https://close.com/apple-touch-icon.png"
+  },
+  "cloudflare": {
+    "file": "cloudflare.png",
+    "kind": "fill",
+    "source": "https://www.cloudflare.com/favicon.ico"
+  },
+  "coda": {
+    "file": "coda.png",
+    "kind": "mark",
+    "source": "https://cdn.coda.io/icons/png/color/coda-512.png"
+  },
   "cursor": {
     "file": "cursor.png",
     "kind": "fill",
     "source": "https://cursor.com/marketing-static/icon-512x512.png"
   },
+  "evernote": {
+    "file": "evernote.png",
+    "kind": "fill",
+    "source": "https://evernote.com/images/evernote-logo-ios.png"
+  },
+  "exa": {
+    "file": "exa.png",
+    "kind": "fill",
+    "source": "https://exa.ai/favicon.ico"
+  },
+  "fathom": {
+    "file": "fathom.png",
+    "kind": "fill",
+    "source": "https://cdn.prod.website-files.com/6899da9beccbdbe92be49b5d/6a4282cf5eaacfd4a9c45526_fathom_favicon.png"
+  },
   "figma": {
     "file": "figma.png",
     "kind": "fill",
     "source": "https://static.figma.com/app/icon/2/icon-512-maskable.png"
+  },
+  "fireflies": {
+    "file": "fireflies.png",
+    "kind": "mark",
+    "source": "https://fireflies.ai/icon.png?8ca41d3ade63e552"
   },
   "gemini": {
     "file": "gemini.png",
@@ -94,6 +159,11 @@
     "kind": "fill",
     "source": "https://grok.com/images/apple-touch-icon.png"
   },
+  "hex": {
+    "file": "hex.png",
+    "kind": "fill",
+    "source": "https://hex.tech/favicon.ico"
+  },
   "higgsfield": {
     "file": "higgsfield.png",
     "kind": "fill",
@@ -103,6 +173,11 @@
     "file": "hubspot.png",
     "kind": "fill",
     "source": "https://www.hubspot.com/hubfs/HubSpot_Logos/HubSpot-Inversed-Favicon.png"
+  },
+  "hugging-face": {
+    "file": "hugging-face.png",
+    "kind": "mark",
+    "source": "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://huggingface.co&size=256"
   },
   "instinct": {
     "file": "instinct.png",
@@ -114,6 +189,16 @@
     "kind": "fill",
     "source": "https://github.com/intercom.png?size=256"
   },
+  "jam": {
+    "file": "jam.png",
+    "kind": "mark",
+    "source": "https://framerusercontent.com/images/PJzGWvCk8HH9Ho4kUWVsQtYI.png"
+  },
+  "klaviyo": {
+    "file": "klaviyo.png",
+    "kind": "fill",
+    "source": "https://www.klaviyo.com/icons/icon-512x512.png"
+  },
   "linear": {
     "file": "linear.png",
     "kind": "fill",
@@ -123,6 +208,11 @@
     "file": "manus.png",
     "kind": "fill",
     "source": "https://manus.im/icon.png?icon.1k-e-nyr3k65n.png"
+  },
+  "mercury": {
+    "file": "mercury.png",
+    "kind": "fill",
+    "source": "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://mercury.com&size=256"
   },
   "microsoft": {
     "file": "microsoft.png",
@@ -138,6 +228,11 @@
     "file": "mistral.png",
     "kind": "fill",
     "source": "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://chat.mistral.ai&size=256"
+  },
+  "mixpanel": {
+    "file": "mixpanel.png",
+    "kind": "fill",
+    "source": "https://github.com/mixpanel.png?size=256"
   },
   "monday": {
     "file": "monday.png",
@@ -158,6 +253,11 @@
     "file": "onedrive.png",
     "kind": "mark",
     "source": "https://res-1.cdn.office.net/files/fabric-cdn-prod_20221209.001/assets/brand-icons/product/png/onedrive_96x2.png"
+  },
+  "otter": {
+    "file": "otter.png",
+    "kind": "fill",
+    "source": "https://cdn.prod.website-files.com/618e9316785b3582a5178502/618e943a80919a98b5e9bf69_apple-icon.png"
   },
   "outlook-calendar": {
     "file": "outlook-calendar.png",
@@ -199,6 +299,16 @@
     "kind": "fill",
     "source": "https://railway.com/android-chrome-512x512.png"
   },
+  "ramp": {
+    "file": "ramp.png",
+    "kind": "fill",
+    "source": "https://ramp.com/apple-touch-icon.png"
+  },
+  "readwise": {
+    "file": "readwise.png",
+    "kind": "mark",
+    "source": "https://github.com/readwiseio.png?size=256"
+  },
   "render": {
     "file": "render.png",
     "kind": "mark",
@@ -224,6 +334,11 @@
     "kind": "fill",
     "source": "https://github.com/square.png?size=256"
   },
+  "strava": {
+    "file": "strava.png",
+    "kind": "fill",
+    "source": "https://d3nn82uaxijpm6.cloudfront.net/icon-strava-chrome-192.png?v=dLlWydWlG8"
+  },
   "stripe": {
     "file": "stripe.png",
     "kind": "fill",
@@ -239,6 +354,21 @@
     "kind": "mark",
     "source": "https://teams.public.onecdn.static.microsoft/evergreen-assets/icons/apple/teams-icon-pwa-v2025-512.png"
   },
+  "ticktick": {
+    "file": "ticktick.png",
+    "kind": "fill",
+    "source": "https://d107mjio2rjf74.cloudfront.net/web/static/img/apple-touch-icon-180x180.png"
+  },
+  "tldv": {
+    "file": "tldv.png",
+    "kind": "mark",
+    "source": "https://tldv.io/faviconV2.png (64 px, scaled)"
+  },
+  "todoist": {
+    "file": "todoist.png",
+    "kind": "mark",
+    "source": "https://www.todoist.com/static/android-chrome-256x256.png"
+  },
   "vercel": {
     "file": "vercel.png",
     "kind": "fill",
@@ -249,9 +379,19 @@
     "kind": "fill",
     "source": "https://cdn.prod.website-files.com/686294e263eb7e215bd232f7/686d53d0446d4237b2f38c5f_webclip.png"
   },
+  "wispr-flow": {
+    "file": "wispr-flow.png",
+    "kind": "fill",
+    "source": "https://cdn.prod.website-files.com/682f84b3838c89f8ff7667db/68d27d1a8a10f417b5644527_flow-wc-v2.png"
+  },
   "wix": {
     "file": "wix.png",
     "kind": "mark",
     "source": "https://www.wix.com/favicon.ico"
+  },
+  "zapier": {
+    "file": "zapier.png",
+    "kind": "fill",
+    "source": "https://zapier.com/favicon.ico"
   }
 }

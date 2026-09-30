@@ -813,3 +813,21 @@ describe("rules for agents", () => {
     expect(consent.html).toMatch(/<button[^>]*value="allow"[^>]*disabled/);
   });
 });
+
+describe("connector apps that the operator registers", () => {
+  test("a new app in the settings wins over the stored registration", async () => {
+    const { upstream } = await import("../src/upstream/oauth.ts");
+    const { deps } = world.gulpy;
+    await browser.signIn(world, EMAIL);
+    await addConnector(browser, "acme-notes");
+    const connector = deps.catalog.get("acme-notes")!;
+    const first = await upstream(deps, connector);
+    expect(first.client.client_id).not.toBe("new-app");
+
+    // The operator swaps the keys (for example a new Slack app) and deploys.
+    deps.config.connectorClients["acme-notes"] = { clientId: "new-app", clientSecret: "new-secret" };
+    const after = await upstream(deps, connector);
+    expect(after.client.client_id).toBe("new-app");
+    expect(after.client.client_secret).toBe("new-secret");
+  });
+});
