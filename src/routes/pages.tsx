@@ -40,6 +40,8 @@ import {
   DeviceEnter,
   DeviceSignIn,
 } from "../views/agent.tsx";
+import { ConnectAll, ConnectAllDone } from "../views/connectall.tsx";
+import type { Connector } from "../catalog.ts";
 import { allowDevice, denyDevice, normalizeUserCode, pendingAgent, tellUser } from "../device.ts";
 import { LinkConsent, LinkDone, LinkLoading, LinkProblem, LinkSignIn } from "../views/link.tsx";
 import type { SignInState } from "../views/signin.tsx";
@@ -238,6 +240,31 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
   });
 
   // Connect to Gulpy: an agent on the computer of the user (src/device.ts)
+
+  // Connect everything: the extension Gulpy for Chrome does the clicks (src/views/connectall.tsx)
+
+  app.get("/connect-all", async (c) => {
+    const current = viewer(deps, c);
+    if (!current) return signInPage(c, { next: "/connect-all" });
+    const cards = viewCatalog(deps, current.user.id).flatMap((group) => group.cards);
+    const item = (connector: Connector) => ({
+      connector,
+      url: `/connect/${encodeURIComponent(connector.id)}?${new URLSearchParams({ next: "/connect-all/done" })}`,
+    });
+    const ready = cards.filter((card) => card.state === "ready").map((card) => card.connector);
+    return render(
+      c,
+      <ConnectAll
+        viewer={current}
+        // Google and Microsoft keep one tap by the user: their consent pages are theirs to confirm.
+        auto={ready.filter((connector) => connector.source.kind === "mcp").map(item)}
+        tap={ready.filter((connector) => connector.source.kind === "native").map(item)}
+        connected={cards.filter((card) => card.state === "connected").length}
+      />,
+    );
+  });
+
+  app.get("/connect-all/done", (c) => render(c, <ConnectAllDone />));
 
   app.get("/device", (c) => {
     const typed = c.req.query("code");

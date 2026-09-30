@@ -509,6 +509,9 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
             <h2>{model.connections.length > 0 ? "Add a tool" : "Step 1. Add your first tool"}</h2>
             <p>You sign in at the provider. {BRAND.name} does not see your password.</p>
           </div>
+          <a class="btn btn-primary btn-small" href="/connect-all">
+            Connect everything
+          </a>
         </div>
         <div class="panel-body">
           <CatalogGrid groups={model.catalog} next="/" />

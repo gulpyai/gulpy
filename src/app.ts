@@ -23,6 +23,7 @@ const ASSETS = {
   "/assets/icon.svg": { file: "icon.svg", type: "image/svg+xml" },
   "/assets/link-done.js": { file: "link-done.js", type: "text/javascript; charset=utf-8" },
   "/assets/catalog.js": { file: "catalog.js", type: "text/javascript; charset=utf-8" },
+  "/assets/connect-all.js": { file: "connect-all.js", type: "text/javascript; charset=utf-8" },
   "/assets/leave.js": { file: "leave.js", type: "text/javascript; charset=utf-8" },
   "/assets/hero.js": { file: "hero.js", type: "text/javascript; charset=utf-8" },
   "/assets/nunito.woff2": { file: "nunito.woff2", type: "font/woff2" },
