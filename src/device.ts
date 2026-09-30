@@ -9,8 +9,9 @@
  * The key reaches each connection of the user, also the ones that the user adds
  * later. It does not expire. The user removes the agent on My tools to stop it.
  *
- * The one tap stays: anyone can ask for a code and send the link to a user. With
- * no tap, a click on that link would give the attacker the whole vault.
+ * The one tap stays: anyone can ask for a link and send it to a user. With no tap,
+ * a click on that link would give the attacker the whole vault. After Allow, Gulpy
+ * emails the user ("Not you? Remove it"), so a user who was tricked finds out.
  */
 import { cleanName, OAuthProblem } from "./agents.ts";
 import { capabilitiesAt } from "./capabilities.ts";
@@ -25,29 +26,19 @@ const CODE_TTL_S = 10 * 60;
 const PICKUP_TTL_MS = 60 * 60_000;
 /** Seconds between two polls of the agent. */
 export const POLL_INTERVAL_S = 5;
-/** No vowels and no letters that look like digits, so a code cannot spell a word. RFC 8628, section 6.1. */
-const ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
-
 export const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 /**
- * For example `FKQ-MJT`. Six letters are enough: a guessed code gives nothing to the
- * guesser, and the code only lets the user see that the page belongs to their agent.
+ * The secret in the link that the agent opens. The user never reads or types it.
+ * RFC 8628 calls it `user_code`. 96 random bits: nobody can guess a pending link.
  */
-function userCode(): string {
-  const letters = [...randomBytes(6)].map((byte) => ALPHABET[byte % ALPHABET.length]).join("");
-  return `${letters.slice(0, 3)}-${letters.slice(3)}`;
+function linkCode(): string {
+  return randomBytes(12).toString("base64url");
 }
 
-/** The form of a code that a person types: capitals, and a dash in the middle. */
+/** A link code, or null. */
 export function normalizeUserCode(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const letters = value.toUpperCase().replace(/[^A-Z]/g, "");
-  if ([...letters].some((letter) => !ALPHABET.includes(letter))) return null;
-  // Codes made before 2026-09-30 have 8 letters.
-  if (letters.length === 6) return `${letters.slice(0, 3)}-${letters.slice(3)}`;
-  if (letters.length === 8) return `${letters.slice(0, 4)}-${letters.slice(4)}`;
-  return null;
+  return typeof value === "string" && /^[A-Za-z0-9_-]{16}$/.test(value) ? value : null;
 }
 
 export function verificationUri(deps: Deps): string {
@@ -71,7 +62,7 @@ export function startDevice(deps: Deps, body: Record<string, unknown>) {
     createdAt: now,
   });
   const deviceCode = randomToken("device");
-  const code = userCode();
+  const code = linkCode();
   deps.store.createDeviceCode(sha256(deviceCode), code, appId, now, now + CODE_TTL_S * 1000);
   return {
     device_code: deviceCode,
@@ -124,6 +115,22 @@ export function allowDevice(deps: Deps, code: string, userId: string): boolean {
     });
   })();
   return allowed;
+}
+
+/** Tells the user by email that an agent got their tools. A failed email does not undo the Allow. */
+export async function tellUser(deps: Deps, email: string, agentName: string): Promise<void> {
+  const base = deps.config.baseUrl;
+  try {
+    await deps.mailer.sendNotice(
+      email,
+      `${agentName} can now use your Gulpy tools`,
+      `${agentName} is now connected to your Gulpy account and can use all your tools.\n\n` +
+        `If this was you, you do not need to do anything.\n\n` +
+        `Not you? Remove it now: ${base}/#agents`,
+    );
+  } catch (error) {
+    console.error("[gulpy] the connect notice did not go out", error);
+  }
 }
 
 export function denyDevice(deps: Deps, code: string, userId: string): void {

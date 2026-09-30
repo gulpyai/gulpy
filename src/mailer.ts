@@ -14,6 +14,14 @@ export class ConsoleMailer implements Mailer {
   peek(email: string): string | undefined {
     return this.last.get(email);
   }
+
+  /** The notices that went out, newest last. The tests read them. */
+  readonly notices: { email: string; subject: string; text: string }[] = [];
+
+  async sendNotice(email: string, subject: string, text: string): Promise<void> {
+    this.notices.push({ email, subject, text });
+    this.log(`[gulpy] notice for ${email}: ${subject}`);
+  }
 }
 
 /** Sends the code through the Resend HTTP API. */
@@ -24,16 +32,23 @@ export class ResendMailer implements Mailer {
     private readonly fetcher: typeof fetch = fetch,
   ) {}
 
-  async sendCode(email: string, code: string): Promise<void> {
+  sendCode(email: string, code: string): Promise<void> {
+    return this.send(
+      email,
+      `${code} is your Gulpy code`,
+      `Your Gulpy sign-in code is ${code}.\n\nThe code stops working after 10 minutes. If you did not ask for it, ignore this message.`,
+    );
+  }
+
+  sendNotice(email: string, subject: string, text: string): Promise<void> {
+    return this.send(email, subject, text);
+  }
+
+  private async send(email: string, subject: string, text: string): Promise<void> {
     const response = await this.fetcher("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        from: this.from,
-        to: [email],
-        subject: `${code} is your Gulpy code`,
-        text: `Your Gulpy sign-in code is ${code}.\n\nThe code stops working after 10 minutes. If you did not ask for it, ignore this message.`,
-      }),
+      body: JSON.stringify({ from: this.from, to: [email], subject, text }),
     });
     if (!response.ok) throw new Error(`The mail service refused the message (HTTP ${response.status})`);
   }

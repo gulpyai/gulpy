@@ -40,7 +40,7 @@ import {
   DeviceEnter,
   DeviceSignIn,
 } from "../views/agent.tsx";
-import { allowDevice, denyDevice, normalizeUserCode, pendingAgent } from "../device.ts";
+import { allowDevice, denyDevice, normalizeUserCode, pendingAgent, tellUser } from "../device.ts";
 import { LinkConsent, LinkDone, LinkLoading, LinkProblem, LinkSignIn } from "../views/link.tsx";
 import type { SignInState } from "../views/signin.tsx";
 import {
@@ -185,7 +185,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     if (next.pathname === "/device") {
       const code = normalizeUserCode(next.searchParams.get("code"));
       const agent = code ? pendingAgent(deps, code) : null;
-      if (code && agent) return render(c, <DeviceSignIn app={agent} code={code} state={state} />, status);
+      if (code && agent) return render(c, <DeviceSignIn app={agent} state={state} />, status);
     }
     if (next.pathname === "/oauth/authorize") {
       const agent = await findAgent(deps, next.searchParams.get("client_id") ?? undefined);
@@ -202,14 +202,13 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     const next = safeNext(String(form.next ?? ""));
     const typed = String(form.email ?? "");
     const email = normalizeEmail(typed);
-    const remember = form.remember === "1";
-    if (!email) return signInPage(c, { next, email: typed, remember, error: "Enter a valid email address." }, 400);
+    if (!email) return signInPage(c, { next, email: typed, error: "Enter a valid email address." }, 400);
     const result = await requestCode(deps, c, email);
     if (!result.ok) {
-      return signInPage(c, { next, email, remember, error: "Too many codes. Wait 10 minutes, then try again." }, 400);
+      return signInPage(c, { next, email, error: "Too many codes. Wait 10 minutes, then try again." }, 400);
     }
     const devCode = showCode(deps) ? deps.mailer.peek?.(email) : undefined;
-    return signInPage(c, { next, email, otpId: result.otpId, devCode, remember });
+    return signInPage(c, { next, email, otpId: result.otpId, devCode });
   });
 
   app.post("/auth/verify", async (c) => {
@@ -220,16 +219,15 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     if (result.ok) {
       // The sign-in form says that Continue means consent to the Terms and the Privacy page.
       deps.store.acceptRules(result.user.id, LEGAL.rulesVersion, deps.now());
-      startSession(deps, c, result.user.id, form.remember === "1");
+      startSession(deps, c, result.user.id);
       return c.redirect(next, 303);
     }
     const email = normalizeEmail(String(form.email ?? "")) ?? undefined;
-    const remember = form.remember === "1";
     if (result.reason === "wrong") {
       const devCode = showCode(deps) && email ? deps.mailer.peek?.(email) : undefined;
-      return signInPage(c, { next, email, otpId, devCode, remember, error: "That code is not correct. Try again." }, 400);
+      return signInPage(c, { next, email, otpId, devCode, error: "That code is not correct. Try again." }, 400);
     }
-    return signInPage(c, { next, email, remember, error: "That code expired. Ask for a new code." }, 400);
+    return signInPage(c, { next, email, error: "That code expired. Ask for a new code." }, 400);
   });
 
   app.post("/auth/signout", async (c) => {
@@ -247,10 +245,10 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     const code = normalizeUserCode(typed);
     const agent = code ? pendingAgent(deps, code) : null;
     if (!code || !agent) {
-      return render(c, <DeviceEnter error="This code does not work. It can be old: ask your agent for a new one." />, 400);
+      return render(c, <DeviceEnter error={`This link is old or used. Tell your agent "connect to ${BRAND.name}" again.`} />, 400);
     }
     const current = viewer(deps, c);
-    if (!current) return render(c, <DeviceSignIn app={agent} code={code} state={{ next: `/device?code=${code}` }} />);
+    if (!current) return render(c, <DeviceSignIn app={agent} state={{ next: `/device?code=${code}` }} />);
     const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
     return render(c, <DeviceConsent app={agent} code={code} viewer={current} logos={logos} />);
   });
@@ -259,18 +257,18 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     const form = await c.req.parseBody();
     const code = normalizeUserCode(form.code);
     const current = viewer(deps, c);
-    if (!code) return render(c, <DeviceEnter error="This code does not work." />, 400);
+    if (!code) return render(c, <DeviceEnter />, 400);
     if (!current) return c.redirect(`/device?code=${code}`, 303);
     if (!sameOrigin(c, deps.config.baseUrl) || !checkCsrf(current, form.csrf)) {
       return c.text("The form expired. Go back and try again.", 403);
     }
     const agent = pendingAgent(deps, code);
-    if (!agent) return render(c, <DeviceEnter error="This code expired. Ask your agent for a new one." />, 400);
+    if (!agent) return render(c, <DeviceEnter error={`This link expired. Tell your agent "connect to ${BRAND.name}" again.`} />, 400);
     if (form.decision !== "allow") {
       denyDevice(deps, code, current.user.id);
       return render(c, <DeviceDone name={agent.name} allowed={false} logos={[]} />);
     }
-    allowDevice(deps, code, current.user.id);
+    if (allowDevice(deps, code, current.user.id)) await tellUser(deps, current.user.email, agent.name);
     const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
     return render(c, <DeviceDone name={agent.name} allowed logos={logos} />);
   });

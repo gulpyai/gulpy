@@ -55,7 +55,8 @@ describe("connect to Gulpy", () => {
 
     const start = await agentPost("/device/code", { client_name: "Claude Code" });
     expect(start.status).toBe(200);
-    expect(start.body.user_code).toMatch(/^[B-DF-HJ-NP-TV-XZ]{3}-[B-DF-HJ-NP-TV-XZ]{3}$/);
+    // The link carries a secret code of 16 characters. The user never reads or types it.
+    expect(start.body.user_code).toMatch(/^[A-Za-z0-9_-]{16}$/);
     expect(start.body.verification_uri_complete).toBe(`${GULPY}/device?code=${start.body.user_code}`);
     expect(start.body.interval).toBe(5);
 
@@ -66,11 +67,16 @@ describe("connect to Gulpy", () => {
 
     const consent = await browser.open(start.body.verification_uri_complete);
     expect(consent.html).toContain("Connect Claude Code?");
-    expect(consent.html).toContain(start.body.user_code);
+    expect(consent.html).toContain("Only tap Allow if you just asked Claude Code to connect.");
     const done = await browser.open(`${GULPY}/device`, {
       form: { csrf: field(consent.html, "csrf"), code: start.body.user_code, decision: "allow" },
     });
     expect(done.html).toContain("All set");
+    // The user gets an email, so a user who was tricked into Allow finds out.
+    const notice = world.mailer.notices.at(-1);
+    expect(notice?.email).toBe(EMAIL);
+    expect(notice?.subject).toBe("Claude Code can now use your Gulpy tools");
+    expect(notice?.text).toContain(`Not you? Remove it now: ${GULPY}/#agents`);
 
     world.advance(6_000);
     const token = await agentPost("/device/token", { device_code: start.body.device_code });
@@ -117,7 +123,6 @@ describe("connect to Gulpy", () => {
     const start = await agentPost("/device/code", { client_name: "Codex" });
     const page = await browser.open(start.body.verification_uri_complete);
     expect(page.html).toContain("Connect Codex");
-    expect(page.html).toContain(start.body.user_code);
     const after = await browser.signIn(world, EMAIL, `/device?code=${start.body.user_code}`);
     expect(after.html).toContain("Connect Codex?");
   });
@@ -146,11 +151,16 @@ describe("connect to Gulpy", () => {
     expect(token.body.access_token).toMatch(/^gulpy_/);
   });
 
-  test("a code typed in lower case, or an old 8-letter code, still works", async () => {
+  test("each connect gets a new link, and a used link does not work again", async () => {
     await browser.signIn(world, EMAIL);
-    const start = await agentPost("/device/code", { client_name: "Codex" });
-    const typed = await browser.open(`${GULPY}/device?code=${start.body.user_code.toLowerCase().replace("-", "")}`);
-    expect(typed.html).toContain("Connect Codex?");
+    const first = await agentPost("/device/code", { client_name: "Muse" });
+    const second = await agentPost("/device/code", { client_name: "Muse" });
+    expect(first.body.user_code).not.toBe(second.body.user_code);
+    const consent = await browser.open(first.body.verification_uri_complete);
+    await browser.open(`${GULPY}/device`, { form: { csrf: field(consent.html, "csrf"), code: first.body.user_code, decision: "allow" } });
+    const again = await browser.open(first.body.verification_uri_complete);
+    expect(again.status).toBe(400);
+    expect(again.html).toContain("This link is old or used.");
   });
 
   test("Cancel refuses the agent", async () => {
@@ -184,7 +194,7 @@ describe("connect to Gulpy", () => {
     world.advance(11 * 60_000);
     const late = await browser.open(start.body.verification_uri_complete);
     expect(late.status).toBe(400);
-    expect(late.html).toContain("This code does not work");
+    expect(late.html).toContain("This link is old or used.");
     expect((await agentPost("/device/token", { device_code: start.body.device_code })).body.error).toBe("expired_token");
     expect((await browser.open(`${GULPY}/device?code=nonsense`)).status).toBe(400);
   });

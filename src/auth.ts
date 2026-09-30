@@ -8,7 +8,6 @@ import type { User } from "./store.ts";
 const SESSION_COOKIE = "gulpy_session";
 const SIGNIN_COOKIE = "gulpy_signin";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
-const SHORT_SESSION_TTL_MS = 24 * 60 * 60_000;
 const OTP_TTL_MS = 10 * 60_000;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_MAX_PER_WINDOW = 5;
@@ -47,21 +46,20 @@ export function checkCsrf(current: Viewer, sent: unknown): boolean {
 }
 
 /**
- * With `remember`, the cookie stays for 30 days: the person asked for it. Without
- * it, the cookie ends when the browser closes, and the session ends after 1 day.
- * A cookie that stays is exempt from consent in the EU only when the person asks for it.
+ * The person stays signed in for 30 days, as in most apps. Sign out ends it at once.
+ * Note: in the EU, a login cookie that stays is exempt from consent only when the person
+ * asks for it. Add a choice again before Gulpy serves EU users at scale.
  */
-export function startSession(deps: Deps, c: Context, userId: string, remember = false): void {
+export function startSession(deps: Deps, c: Context, userId: string): void {
   const id = randomToken("sess");
   const now = deps.now();
-  const ttl = remember ? SESSION_TTL_MS : SHORT_SESSION_TTL_MS;
-  deps.store.createSession(sha256(id), userId, randomToken("csrf"), now, now + ttl);
+  deps.store.createSession(sha256(id), userId, randomToken("csrf"), now, now + SESSION_TTL_MS);
   setCookie(c, SESSION_COOKIE, id, {
     path: "/",
     httpOnly: true,
     sameSite: "Lax",
     secure: deps.config.baseUrl.startsWith("https://"),
-    ...(remember ? { maxAge: SESSION_TTL_MS / 1000 } : {}),
+    maxAge: SESSION_TTL_MS / 1000,
   });
 }
 

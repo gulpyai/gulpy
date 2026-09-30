@@ -3159,31 +3159,12 @@ code,
   background: #f0eee8;
 }
 
-/* Connect to Gulpy: the code that the agent shows */
-
-.device-code {
-  margin: 14px auto 0;
-  width: fit-content;
-  padding: 8px 18px;
-  border-radius: 12px;
-  background: #f0eee8;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
-.device-scope {
-  display: grid;
-  gap: 10px;
-  justify-items: center;
-  text-align: center;
-  color: var(--ink-2);
-}
+/* Connect to Gulpy */
 
 .device-logos {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 6px;
+  margin-top: 10px;
 }

@@ -10,7 +10,6 @@ export interface SignInState {
   /** On the computer of the developer only: the code. The page fills it in, because no mail goes out. */
   devCode?: string;
   /** The person asked to stay signed in for 30 days. */
-  remember?: boolean;
 }
 
 /** Sign-in means consent. The text is next to the button, and the links open the full texts. */
@@ -30,7 +29,6 @@ export const SignInForm: FC<{ state: SignInState; autofocus?: boolean }> = ({ st
         <input type="hidden" name="next" value={state.next} />
         <input type="hidden" name="otp_id" value={state.otpId} />
         <input type="hidden" name="email" value={state.email} />
-        {state.remember && <input type="hidden" name="remember" value="1" />}
         {state.error && <Notice kind="error">{state.error}</Notice>}
         {state.devCode && (
           <Notice kind="dev">
@@ -82,10 +80,6 @@ export const SignInForm: FC<{ state: SignInState; autofocus?: boolean }> = ({ st
         />
         <span class="hint">We send you a code. You do not need a password.</span>
       </div>
-      <label class="check">
-        <input type="checkbox" name="remember" value="1" checked={state.remember} />
-        Keep me signed in for 30 days
-      </label>
       <button class="btn btn-primary btn-block" type="submit">
         Email me a code
       </button>

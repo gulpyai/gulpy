@@ -23,9 +23,9 @@ On macOS or Linux, run:
 curl -fsSL ${base}/connect.sh | sh -s -- "<your name, for example Claude Code>"
 \`\`\`
 
-The script opens the browser. The user signs in and taps **Allow**. The script
-saves the key in \`~/.config/gulpy/key\` (mode 600). Tell the user to look at the
-browser, and show them the code that the script prints.
+The script opens the browser. The user taps **Allow** (and signs in the first time).
+The script saves the key in \`~/.config/gulpy/key\` (mode 600). Tell the user to look
+at the browser.
 
 Without the script (RFC 8628, device authorization grant):
 
@@ -35,7 +35,7 @@ Without the script (RFC 8628, device authorization grant):
    curl -sS -X POST ${base}/device/code -d "client_name=Claude Code"
    \`\`\`
 
-   The answer has \`device_code\`, \`user_code\`, \`verification_uri_complete\` and \`interval\`.
+   The answer has \`device_code\`, \`verification_uri_complete\` and \`interval\`.
 2. Open \`verification_uri_complete\` in the browser of the user (\`open\` on macOS,
    \`xdg-open\` on Linux). If you cannot open it, show the address to the user.
 3. Every \`interval\` seconds, ask for the key:
@@ -54,7 +54,7 @@ chat window): send the user the \`verification_uri_complete\` link and ask them 
 say "done" after they tap Allow. When they say it, call \`/device/token\` one time.
 The key waits for you for 1 hour after Allow.
 
-Show the user only the link and the short \`user_code\`. Never show the
+Show the user only the link. There is no code to read or type. Never show the
 \`device_code\` or the key: they are secrets.
 
 ## 2. Keep the key secret
@@ -118,14 +118,12 @@ field() { printf '%s' "$2" | sed -n "s/.*\\"$1\\":\\"\\{0,1\\}\\([^\\",}]*\\).*/
 
 START=$(curl -fsS -X POST "$BASE/device/code" --data-urlencode "client_name=$NAME")
 DEVICE=$(field device_code "$START")
-CODE=$(field user_code "$START")
 URL=$(field verification_uri_complete "$START")
 WAIT=$(field interval "$START")
-[ -n "$DEVICE" ] || { echo "${BRAND.name} did not give a code." >&2; exit 1; }
+[ -n "$DEVICE" ] || { echo "${BRAND.name} did not answer." >&2; exit 1; }
 
-echo "Connect \\"$NAME\\" to ${BRAND.name}:"
-echo "  1. Open $URL"
-echo "  2. Check that the page shows the code $CODE, then tap Allow."
+echo "Connect \\"$NAME\\" to ${BRAND.name}: tap Allow in the browser."
+echo "If no browser opens, open: $URL"
 if command -v open >/dev/null 2>&1; then open "$URL" >/dev/null 2>&1 || true
 elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$URL" >/dev/null 2>&1 || true
 fi

@@ -5,6 +5,8 @@ import type { Store } from "./store.ts";
 
 export interface Mailer {
   sendCode(email: string, code: string): Promise<void>;
+  /** A short security notice, for example "Muse can now use your tools". */
+  sendNotice(email: string, subject: string, text: string): Promise<void>;
   /** Development only. Returns the last code for the address so that the page can show it. */
   peek?(email: string): string | undefined;
 }

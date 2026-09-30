@@ -259,49 +259,25 @@ export const AgentDone: FC<{ to: string; name: string; logos: Logo[]; allowed: b
 
 /* Connect to Gulpy: the sign-in of an agent on the computer of the user (src/device.ts). */
 
-const DeviceCode: FC<{ code: string }> = ({ code }) => (
-  <p class="device-code" aria-label="Code">
-    {code}
-  </p>
-);
-
-/** The user opened /device with no code, or with a code that does not work. */
+/** The link is missing, old or used. */
 export const DeviceEnter: FC<{ error?: string }> = ({ error }) => (
   <LinkPage title={`Connect an agent to ${BRAND.name}`}>
     <header class="link-head">
       <Mascot size="large" />
       <h1>Connect an agent</h1>
-      <p class="muted">Type the code that your agent shows.</p>
+      <p class="muted">
+        {error ?? `Tell your agent "connect to ${BRAND.name}". It opens this page with a new link.`}
+      </p>
     </header>
-    {error && <Notice kind="error">{error}</Notice>}
-    <form method="get" action="/device" class="form-grid">
-      <div class="field">
-        <label for="device-code">Code</label>
-        <input
-          class="input"
-          id="device-code"
-          name="code"
-          required
-          autofocus
-          autocomplete="off"
-          autocapitalize="characters"
-          placeholder="FKQ-MJT"
-        />
-      </div>
-      <button class="btn btn-primary btn-block" type="submit">
-        Continue
-      </button>
-    </form>
   </LinkPage>
 );
 
-export const DeviceSignIn: FC<{ app: App; code: string; state: SignInState }> = ({ app, code, state }) => (
+export const DeviceSignIn: FC<{ app: App; state: SignInState }> = ({ app, state }) => (
   <LinkPage title={`Connect ${app.name}`}>
     <header class="link-head">
       <Pair app={app} />
       <h1>Connect {app.name}</h1>
       <p class="muted">Sign in to {BRAND.name}. Then tap Allow, and {app.name} gets your tools.</p>
-      <DeviceCode code={code} />
     </header>
     <div class="link-stack">
       <SignInForm state={state} />
@@ -319,20 +295,18 @@ export const DeviceConsent: FC<{ app: App; code: string; viewer: Viewer; logos: 
     <header class="link-head">
       <Pair app={app} />
       <h1>Connect {app.name}?</h1>
-      <p class="muted">Check that your agent shows this code. If you did not start this, tap Cancel.</p>
-      <DeviceCode code={code} />
+      <p class="muted">
+        {app.name} gets all your tools, and the tools that you add later.
+      </p>
+      {logos.length > 0 && (
+        <p class="device-logos">
+          {logos.slice(0, 8).map((logo) => (
+            <ConnectorIcon logo={logo} small />
+          ))}
+        </p>
+      )}
     </header>
     <div class="link-stack">
-      <p class="device-scope">
-        {app.name} gets all your tools, and the tools that you add later.
-        {logos.length > 0 && (
-          <span class="device-logos">
-            {logos.slice(0, 8).map((logo) => (
-              <ConnectorIcon logo={logo} small />
-            ))}
-          </span>
-        )}
-      </p>
       <form method="post" action="/device" class="link-form">
         <input type="hidden" name="csrf" value={viewer.csrf} />
         <input type="hidden" name="code" value={code} />
@@ -345,6 +319,7 @@ export const DeviceConsent: FC<{ app: App; code: string; viewer: Viewer; logos: 
           </button>
         </div>
       </form>
+      <p class="fine">Only tap Allow if you just asked {app.name} to connect. You can remove it at any time.</p>
       <Disclosure name={app.name} />
     </div>
     <footer class="link-foot">

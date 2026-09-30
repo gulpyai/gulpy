@@ -29,8 +29,7 @@ function userId(): string {
 }
 
 /** Signs in with plain requests, and returns the Set-Cookie line of the session. */
-async function sessionCookie(remember: boolean): Promise<string> {
-  const extra: Record<string, string> = remember ? { remember: "1" } : {};
+async function sessionCookie(): Promise<string> {
   const post = (path: string, form: Record<string, string>, cookie = "") =>
     world.gulpy.app.request(`${GULPY}${path}`, {
       method: "POST",
@@ -42,12 +41,12 @@ async function sessionCookie(remember: boolean): Promise<string> {
       },
       body: new URLSearchParams(form).toString(),
     });
-  const start = await post("/auth/start", { email: EMAIL, next: "/", ...extra });
+  const start = await post("/auth/start", { email: EMAIL, next: "/" });
   const binding = start.headers.getSetCookie().find((line) => line.startsWith("gulpy_signin="))?.split(";")[0] ?? "";
   const html = await start.text();
   const verify = await post(
     "/auth/verify",
-    { email: EMAIL, next: "/", otp_id: field(html, "otp_id"), code: world.mailer.peek(EMAIL) ?? "", ...extra },
+    { email: EMAIL, next: "/", otp_id: field(html, "otp_id"), code: world.mailer.peek(EMAIL) ?? "" },
     binding,
   );
   return verify.headers.getSetCookie().find((line) => line.startsWith("gulpy_session=")) ?? "";
@@ -59,7 +58,7 @@ describe("consent and the sign-in cookie", () => {
     expect(html).toContain("When you sign in, you agree to the");
     expect(html).toContain('href="/terms"');
     expect(html).toContain('href="/privacy"');
-    expect(html).toContain('name="remember"');
+    expect(html).not.toContain('name="remember"');
   });
 
   test("sign-in records the version of the rules and the time", async () => {
@@ -69,32 +68,15 @@ describe("consent and the sign-in cookie", () => {
     expect(accepted?.acceptedAt).toBe(world.gulpy.deps.now());
   });
 
-  test("the session cookie stays only if the person asks for it", async () => {
-    // The harness browser drops the binding cookie here, so read the page flow through the real browser.
-    const page = await browser.open(`${GULPY}/auth/start`, { form: { email: EMAIL, next: "/", remember: "1" } });
-    expect(page.html).toContain('name="remember" value="1"');
-
-    const withRemember = world.gulpy.deps.store;
-    await browser.open(`${GULPY}/auth/verify`, {
-      form: { email: EMAIL, next: "/", otp_id: field(page.html, "otp_id"), code: world.mailer.peek(EMAIL) ?? "", remember: "1" },
-    });
-    const long = withRemember.db.query("SELECT created_at, expires_at FROM sessions").get() as { created_at: number; expires_at: number };
-    expect(long.expires_at - long.created_at).toBe(30 * DAY);
-
-    const other = world.browser();
-    await other.signIn(world, EMAIL);
-    const rows = withRemember.db.query("SELECT created_at, expires_at FROM sessions ORDER BY expires_at").all() as {
+  test("a sign-in lasts 30 days, in the database and in the cookie", async () => {
+    const cookie = await sessionCookie();
+    expect(cookie).toStartWith("gulpy_session=");
+    expect(cookie).toContain(`Max-Age=${30 * 24 * 60 * 60}`);
+    const row = world.gulpy.deps.store.db.query("SELECT created_at, expires_at FROM sessions").get() as {
       created_at: number;
       expires_at: number;
-    }[];
-    expect((rows[0]?.expires_at ?? 0) - (rows[0]?.created_at ?? 0)).toBe(DAY);
-  });
-
-  test("without Keep me signed in, the cookie ends with the browser", async () => {
-    const short = await sessionCookie(false);
-    expect(short).toStartWith("gulpy_session=");
-    expect(short).not.toContain("Max-Age");
-    expect(await sessionCookie(true)).toContain(`Max-Age=${30 * 24 * 60 * 60}`);
+    };
+    expect(row.expires_at - row.created_at).toBe(30 * DAY);
   });
 });
 
