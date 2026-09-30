@@ -134,6 +134,22 @@ export class Vault {
     return open(this.userKey(connection.userId), sealed.slice(USER_KEY_MARK.length), aad);
   }
 
+  /**
+   * Gives a connection to another user, for example when two accounts of one person merge.
+   * The tokens are sealed with the key of the owner, so they are sealed again for the new
+   * owner. A plain UPDATE of user_id makes them unreadable.
+   */
+  moveConnection(connection: Connection, toUserId: string): void {
+    const reseal = (kind: "access" | "refresh", sealed: string) =>
+      this.seal(toUserId, connection.id, kind, this.open(connection, kind, sealed));
+    this.deps.store.moveConnection(
+      connection.id,
+      toUserId,
+      reseal("access", connection.accessTokenEnc),
+      connection.refreshTokenEnc ? reseal("refresh", connection.refreshTokenEnc) : null,
+    );
+  }
+
   /** Returns a token that is valid now. Refreshes it if necessary. */
   async accessToken(given: Connection, client: TokenClient, force = false): Promise<string> {
     // Read the row again. The caller can hold a copy from before a refresh.

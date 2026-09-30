@@ -445,3 +445,32 @@ describe("old address", () => {
     expect(normal.status).toBe(200);
   });
 });
+
+describe("moving a connection to another account", () => {
+  test("a plain change of owner makes the tokens unreadable; moveConnection seals them again", async () => {
+    const { addConnector } = await import("./harness.ts");
+    const { Vault } = await import("../src/vault.ts");
+    const { backendOf, tokensFor } = await import("../src/access.ts");
+    const { deps } = world.gulpy;
+    await browser.signIn(world, EMAIL);
+    await addConnector(browser, "acme-notes");
+    const [connection] = deps.store.db.query("SELECT id FROM connections").all() as { id: string }[];
+    const before = deps.store.connectionById(connection?.id ?? "");
+    if (!before) throw new Error("no connection");
+    const client = tokensFor(deps, backendOf(deps, before)!);
+    const token = await new Vault(deps).accessToken(before, client);
+    const other = deps.store.createUser("usr_other", "other@example.com", deps.now());
+
+    // The mistake of 2026-09-30: only the owner changes, the tokens keep the key of the first owner.
+    deps.store.db.query("UPDATE connections SET user_id = ? WHERE id = ?").run(other.id, before.id);
+    const broken = deps.store.connectionById(before.id)!;
+    await expect(new Vault(deps).accessToken(broken, client)).rejects.toThrow();
+
+    // The fix: move it back, then move it with the vault.
+    deps.store.db.query("UPDATE connections SET user_id = ? WHERE id = ?").run(before.userId, before.id);
+    new Vault(deps).moveConnection(before, other.id);
+    const moved = deps.store.connectionById(before.id)!;
+    expect(moved.userId).toBe(other.id);
+    expect(await new Vault(deps).accessToken(moved, client)).toBe(token);
+  });
+});

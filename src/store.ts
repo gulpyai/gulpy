@@ -971,6 +971,20 @@ export class Store {
     this.run("UPDATE connections SET tools = ?, tools_fetched_at = ? WHERE id = ?", JSON.stringify(tools), now, id);
   }
 
+  /** Gives a connection, and the grants on it, to another user. The caller seals the tokens for that user. */
+  moveConnection(id: string, toUserId: string, accessTokenEnc: string, refreshTokenEnc: string | null): void {
+    this.db.transaction(() => {
+      this.run(
+        "UPDATE connections SET user_id = ?, access_token_enc = ?, refresh_token_enc = ? WHERE id = ?",
+        toUserId,
+        accessTokenEnc,
+        refreshTokenEnc,
+        id,
+      );
+      this.run("UPDATE grants SET user_id = ? WHERE connection_id = ?", toUserId, id);
+    })();
+  }
+
   setConnectionStatus(id: string, status: ConnectionStatus): void {
     this.run("UPDATE connections SET status = ? WHERE id = ?", status, id);
   }
