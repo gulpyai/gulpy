@@ -285,7 +285,7 @@ export const DeviceEnter: FC<{ error?: string }> = ({ error }) => (
           autofocus
           autocomplete="off"
           autocapitalize="characters"
-          placeholder="WDJB-MJHT"
+          placeholder="FKQ-MJT"
         />
       </div>
       <button class="btn btn-primary btn-block" type="submit">
@@ -370,7 +370,11 @@ export const DeviceDone: FC<{ name: string; allowed: boolean; logos: Logo[] }> =
         <Mascot size="large" />
       )}
       <h1>{allowed ? "All set" : "Nothing was shared"}</h1>
-      <p class="muted">{allowed ? `Go back to ${name}. It has your tools now. You can close this page.` : "You can close this page."}</p>
+      <p class="muted">
+        {allowed
+          ? `Go back to ${name}. If it waits for you, say "done". Then it has your tools. You can close this page.`
+          : "You can close this page."}
+      </p>
     </div>
   </LinkPage>
 );

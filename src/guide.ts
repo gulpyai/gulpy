@@ -49,6 +49,14 @@ Without the script (RFC 8628, device authorization grant):
    Success gives \`{ "access_token": "gulpy_..." }\`. That is the key.
 4. Save the key where you keep secrets, for example \`~/.config/gulpy/key\` with mode 600.
 
+**A chat agent that cannot wait in the background** (for example an assistant in a
+chat window): send the user the \`verification_uri_complete\` link and ask them to
+say "done" after they tap Allow. When they say it, call \`/device/token\` one time.
+The key waits for you for 1 hour after Allow.
+
+Show the user only the link and the short \`user_code\`. Never show the
+\`device_code\` or the key: they are secrets.
+
 ## 2. Keep the key secret
 
 The key opens all the tools of the user. Send it only to ${base}. Do not print

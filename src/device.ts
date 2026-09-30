@@ -21,6 +21,8 @@ import { backendOf } from "./access.ts";
 import type { App } from "./store.ts";
 
 const CODE_TTL_S = 10 * 60;
+/** After Allow, the agent can collect its key for this long. A chat agent asks only when the user says "done". */
+const PICKUP_TTL_MS = 60 * 60_000;
 /** Seconds between two polls of the agent. */
 export const POLL_INTERVAL_S = 5;
 /** No vowels and no letters that look like digits, so a code cannot spell a word. RFC 8628, section 6.1. */
@@ -28,19 +30,24 @@ const ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 
 export const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
-/** For example `WDJB-MJHT`. */
+/**
+ * For example `FKQ-MJT`. Six letters are enough: a guessed code gives nothing to the
+ * guesser, and the code only lets the user see that the page belongs to their agent.
+ */
 function userCode(): string {
-  const bytes = randomBytes(8);
-  const letters = [...bytes].map((byte) => ALPHABET[byte % ALPHABET.length]).join("");
-  return `${letters.slice(0, 4)}-${letters.slice(4)}`;
+  const letters = [...randomBytes(6)].map((byte) => ALPHABET[byte % ALPHABET.length]).join("");
+  return `${letters.slice(0, 3)}-${letters.slice(3)}`;
 }
 
 /** The form of a code that a person types: capitals, and a dash in the middle. */
 export function normalizeUserCode(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const letters = value.toUpperCase().replace(/[^A-Z]/g, "");
-  if (letters.length !== 8 || [...letters].some((letter) => !ALPHABET.includes(letter))) return null;
-  return `${letters.slice(0, 4)}-${letters.slice(4)}`;
+  if ([...letters].some((letter) => !ALPHABET.includes(letter))) return null;
+  // Codes made before 2026-09-30 have 8 letters.
+  if (letters.length === 6) return `${letters.slice(0, 3)}-${letters.slice(3)}`;
+  if (letters.length === 8) return `${letters.slice(0, 4)}-${letters.slice(4)}`;
+  return null;
 }
 
 export function verificationUri(deps: Deps): string {
@@ -92,7 +99,7 @@ export function allowDevice(deps: Deps, code: string, userId: string): boolean {
   if (!device) return false;
   let allowed = false;
   deps.store.db.transaction(() => {
-    if (!deps.store.decideDeviceCode(code, userId, "approved", now)) return;
+    if (!deps.store.decideDeviceCode(code, userId, "approved", now, now + PICKUP_TTL_MS)) return;
     allowed = true;
     for (const connection of deps.store.connectionsByUser(userId)) {
       if (connection.status !== "active" || !backendOf(deps, connection)) continue;

@@ -20,7 +20,7 @@ HOST="${GULPY_HOST:-app.gulpy.ai}"
 OLD_HOSTS=(${=GULPY_OLD_HOSTS-cloud.gulpy.ai})
 MASTER_KEY_NAME="${GULPY_MASTER_KEY_NAME:-gulpy-prod-master-key}"
 TUNNEL="${GULPY_TUNNEL:-gulpy-vm}"
-MAIL_FROM="${MAIL_FROM:-Gulpy <skyler@gulpy.ai>}"
+MAIL_FROM="${MAIL_FROM:-Gulpy <no-reply@gulpy.ai>}"
 DIR=/opt/gulpy
 
 key() { security find-generic-password -s "$1" -w; }

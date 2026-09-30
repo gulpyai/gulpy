@@ -55,7 +55,7 @@ describe("connect to Gulpy", () => {
 
     const start = await agentPost("/device/code", { client_name: "Claude Code" });
     expect(start.status).toBe(200);
-    expect(start.body.user_code).toMatch(/^[B-DF-HJ-NP-TV-XZ]{4}-[B-DF-HJ-NP-TV-XZ]{4}$/);
+    expect(start.body.user_code).toMatch(/^[B-DF-HJ-NP-TV-XZ]{3}-[B-DF-HJ-NP-TV-XZ]{3}$/);
     expect(start.body.verification_uri_complete).toBe(`${GULPY}/device?code=${start.body.user_code}`);
     expect(start.body.interval).toBe(5);
 
@@ -128,6 +128,29 @@ describe("connect to Gulpy", () => {
     expect((await tools(key)).body.tools.map((tool: { name: string }) => tool.name)).not.toContain("acme_notes_search_notes");
     await addConnector(browser, "acme-notes");
     expect((await tools(key)).body.tools.map((tool: { name: string }) => tool.name)).toContain("acme_notes_search_notes");
+  });
+
+  test("a chat agent can collect its key up to 1 hour after Allow, when the user says done", async () => {
+    await browser.signIn(world, EMAIL);
+    const start = await agentPost("/device/code", { client_name: "Muse" });
+    world.advance(8 * 60_000);
+    const consent = await browser.open(start.body.verification_uri_complete);
+    const done = await browser.open(`${GULPY}/device`, {
+      form: { csrf: field(consent.html, "csrf"), code: start.body.user_code, decision: "allow" },
+    });
+    expect(done.html).toContain("say &quot;done&quot;");
+    // Past the 10 minutes of the code, but within 1 hour of Allow.
+    world.advance(40 * 60_000);
+    const token = await agentPost("/device/token", { device_code: start.body.device_code });
+    expect(token.status).toBe(200);
+    expect(token.body.access_token).toMatch(/^gulpy_/);
+  });
+
+  test("a code typed in lower case, or an old 8-letter code, still works", async () => {
+    await browser.signIn(world, EMAIL);
+    const start = await agentPost("/device/code", { client_name: "Codex" });
+    const typed = await browser.open(`${GULPY}/device?code=${start.body.user_code.toLowerCase().replace("-", "")}`);
+    expect(typed.html).toContain("Connect Codex?");
   });
 
   test("Cancel refuses the agent", async () => {

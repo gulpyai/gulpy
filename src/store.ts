@@ -1243,13 +1243,18 @@ export class Store {
     );
   }
 
-  /** The user allows or refuses the agent. Only a pending code changes. */
-  decideDeviceCode(userCode: string, userId: string, status: "approved" | "denied", now: number): boolean {
+  /**
+   * The user allows or refuses the agent. Only a pending code changes. An approved code
+   * stays valid until `keepUntil`, so that a chat agent can collect its key when the user says "done".
+   */
+  decideDeviceCode(userCode: string, userId: string, status: "approved" | "denied", now: number, keepUntil = now): boolean {
     return (
       this.run(
-        "UPDATE device_codes SET status = ?, user_id = ? WHERE user_code = ? AND status = 'pending' AND expires_at > ?",
+        `UPDATE device_codes SET status = ?, user_id = ?, expires_at = MAX(expires_at, ?)
+         WHERE user_code = ? AND status = 'pending' AND expires_at > ?`,
         status,
         userId,
+        keepUntil,
         userCode,
         now,
       ) > 0
