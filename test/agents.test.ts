@@ -3,7 +3,7 @@
  * authorization. The test agent uses the MCP SDK, as real agents do.
  */
 import { beforeEach, describe, expect, test } from "bun:test";
-import { isAllowedRedirect, redirectMatches } from "../src/agents.ts";
+import { isAllowedRedirect, isTrustedReturn, redirectMatches } from "../src/agents.ts";
 import {
   addConnector,
   agentRequest,
@@ -279,6 +279,183 @@ describe("an agent signs in with standard MCP authorization", () => {
     expect(dashboard.html).toContain("</strong> used<code>acme-notes.search_notes</code>");
     expect(dashboard.html).toContain("acme-notes.search_notes");
     expect(dashboard.html).not.toContain("private words");
+  });
+});
+
+describe("no approval step", () => {
+  const CLAUDE = "https://claude.ai/api/mcp/auth_callback";
+  const LOCAL = "http://localhost:52905/callback";
+  const count = (table: string) => (world.gulpy.deps.store.db.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+
+  beforeEach(async () => {
+    await addConnector(browser, "acme-notes");
+    await addConnector(browser, "acme-tasks");
+  });
+
+  test("a program on the computer of the user gets the tools with no tap", async () => {
+    const codex = new TestAgent(world, "Codex", LOCAL);
+    const page = await codex.start(browser);
+    expect(page.html).toContain("All set");
+    expect(page.html).not.toContain('value="allow"');
+
+    const back = await codex.finish(page);
+    expect(back.origin).toBe("http://localhost:52905");
+    expect(back.searchParams.get("state")).toBe("state-Codex");
+    expect(await codex.toolNames()).toHaveLength(7);
+
+    const created = await codex.call("acme_tasks_create_task", { title: "Call Dana" });
+    expect(created.isError).toBe(false);
+    const dashboard = await browser.open(`${GULPY}/`);
+    expect(dashboard.html).toContain("Read and write · automatic");
+  });
+
+  test("an agent on the site of a company that Gulpy knows gets the tools with no tap", async () => {
+    const claude = new TestAgent(world, "Claude", CLAUDE);
+    const back = await claude.connectWithNoTap(browser);
+    expect(back.origin).toBe("https://claude.ai");
+    expect(await claude.toolNames()).toHaveLength(7);
+  });
+
+  test("an agent on a site that Gulpy does not know needs the approval of the user", async () => {
+    const orbit = new TestAgent(world, "Orbit");
+    const page = await orbit.start(browser);
+    expect(page.html).toContain("Let Orbit use your tools?");
+    expect(count("grants")).toBe(0);
+    expect(count("auth_codes")).toBe(0);
+  });
+
+  test("the name of an agent is not proof. The return address is", async () => {
+    const copy = new TestAgent(world, "Claude", "https://claude.ai.evil.test/api/mcp/auth_callback");
+    const page = await copy.start(browser);
+    expect(page.html).toContain("Let Claude use your tools?");
+    expect(page.html).toContain("did not verify");
+    expect(count("auth_codes")).toBe(0);
+
+    for (const bad of ["https://evil.test/claude.ai", "https://claude.ai.evil.test/cb", "http://claude.ai/cb", "https://localhost/cb", "evil://cb", "no address"]) {
+      expect([bad, isTrustedReturn(bad)]).toEqual([bad, false]);
+    }
+    for (const good of [CLAUDE, LOCAL, "http://127.0.0.1:4000/cb", "https://chatgpt.com/connector_platform_oauth_redirect", "cursor://anysphere.cursor-mcp/oauth/callback"]) {
+      expect([good, isTrustedReturn(good)]).toEqual([good, true]);
+    }
+  });
+
+  test("a person who is not signed in signs in, and then the agent gets the tools", async () => {
+    const fresh = world.browser();
+    const claude = new TestAgent(world, "Claude", CLAUDE);
+    const signIn = await claude.start(fresh);
+    expect(signIn.html).toContain("Then Claude gets your tools.");
+
+    const here = new URL(signIn.url);
+    const page = await fresh.signIn(world, EMAIL, here.pathname + here.search);
+    expect(page.html).toContain("All set");
+    await claude.finish(page);
+    expect(await claude.toolNames()).toHaveLength(7);
+  });
+
+  test("a new user adds the first tool on the approval page. Then the agent gets it with no tap", async () => {
+    const fresh = world.browser();
+    await fresh.signIn(world, "new@example.com");
+    const claude = new TestAgent(world, "Claude", CLAUDE);
+    const empty = await claude.start(fresh);
+    expect(empty.html).toContain("You have no tools yet");
+
+    const here = new URL(empty.url);
+    const page = await addConnector(fresh, "acme-code", BOB, here.pathname + here.search);
+    expect(page.html).toContain("All set");
+    await claude.finish(page);
+    expect(await claude.toolNames()).toEqual(["acme_code_create_issue", "acme_code_list_issues", "acme_code_list_repositories", "list_connections"]);
+  });
+
+  test("a new tool goes to each agent of the user", async () => {
+    const codex = new TestAgent(world, "Codex", LOCAL);
+    await codex.connectWithNoTap(browser);
+    const orbit = new TestAgent(world, "Orbit");
+    await orbit.connect(browser);
+    expect(await codex.toolNames()).toHaveLength(7);
+
+    await addConnector(browser, "acme-code");
+    expect((await codex.toolNames()).filter((name) => name.startsWith("acme_code"))).toHaveLength(3);
+    expect((await orbit.toolNames()).filter((name) => name.startsWith("acme_code"))).toHaveLength(3);
+  });
+
+  test("a new tool does not go to the agents of a different user, or to an agent that the user removed", async () => {
+    const codex = new TestAgent(world, "Codex", LOCAL);
+    await codex.connectWithNoTap(browser);
+    const other = world.browser();
+    await other.signIn(world, "other@example.com");
+    await addConnector(other, "acme-notes", BOB);
+    const theirs = new TestAgent(world, "Scout", "http://127.0.0.1:7000/callback");
+    await theirs.connectWithNoTap(other);
+
+    const dashboard = await browser.open(`${GULPY}/`);
+    const appId = (world.gulpy.deps.store.db.query("SELECT id FROM apps WHERE name = 'Codex'").get() as { id: string }).id;
+    await browser.open(`${GULPY}/apps/${appId}/revoke`, { form: { csrf: field(dashboard.html, "csrf") }, from: dashboard.url });
+
+    await addConnector(browser, "acme-code");
+    expect(count("grants")).toBe(1);
+    expect(await theirs.toolNames()).toEqual(["acme_notes_create_note", "acme_notes_get_note", "acme_notes_search_notes", "list_connections"]);
+  });
+
+  test("an agent that has read access only gets a new tool with read access", async () => {
+    const notes = connectionId("acme-notes");
+    const tasks = connectionId("acme-tasks");
+    const orbit = new TestAgent(world, "Orbit");
+    await orbit.connect(browser, { levels: { [notes]: "read", [tasks]: "read" } });
+
+    await addConnector(browser, "acme-notes", BOB);
+    const names = await orbit.toolNames();
+    expect(names).toContain("acme_notes2_search_notes");
+    expect(names).not.toContain("acme_notes2_create_note");
+  });
+
+  test("a second sign-in at a connector does not give back a tool that the user did not select", async () => {
+    const notes = connectionId("acme-notes");
+    const orbit = new TestAgent(world, "Orbit");
+    await orbit.connect(browser, { select: [notes] });
+
+    await addConnector(browser, "acme-tasks");
+    expect((await orbit.toolNames()).some((name) => name.startsWith("acme_tasks"))).toBe(false);
+  });
+
+  test("an agent that connects again keeps what it has", async () => {
+    const codex = new TestAgent(world, "Codex", LOCAL);
+    await codex.connectWithNoTap(browser);
+    const tasks = connectionId("acme-tasks");
+    world.gulpy.deps.store.deleteGrantFor(
+      (world.gulpy.deps.store.db.query("SELECT id FROM apps WHERE name = 'Codex'").get() as { id: string }).id,
+      tasks,
+    );
+
+    codex.forget();
+    await codex.connectWithNoTap(browser);
+    const names = await codex.toolNames();
+    expect(names).toContain("acme_notes_search_notes");
+    expect(names.some((name) => name.startsWith("acme_tasks"))).toBe(false);
+  });
+
+  test("if no tool works, the user sees the page with the button to connect again", async () => {
+    const { store } = world.gulpy.deps;
+    store.setConnectionStatus(connectionId("acme-notes"), "needs_reauth");
+    store.setConnectionStatus(connectionId("acme-tasks"), "needs_reauth");
+    const codex = new TestAgent(world, "Codex", LOCAL);
+    const page = await codex.start(browser);
+    expect(page.html).toContain("Reconnect");
+    expect(count("auth_codes")).toBe(0);
+  });
+
+  test("the operator can turn the automatic approval off", async () => {
+    world = await createWorld({ autoApprove: false });
+    browser = world.browser();
+    await browser.signIn(world, EMAIL);
+    await addConnector(browser, "acme-notes");
+
+    const claude = new TestAgent(world, "Claude", CLAUDE);
+    const page = await claude.start(browser);
+    expect(page.html).toContain("Let Claude use your tools?");
+    await claude.allow(browser, page);
+
+    await addConnector(browser, "acme-tasks");
+    expect((await claude.toolNames()).some((name) => name.startsWith("acme_tasks"))).toBe(false);
   });
 });
 

@@ -9,11 +9,13 @@
  */
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { backendOf } from "./access.ts";
 import { BRAND } from "./brand.ts";
-import { capabilitiesAt, type AccessLevel } from "./capabilities.ts";
+import { capabilitiesAt, levelOf, type AccessLevel } from "./capabilities.ts";
 import { pkceChallenge, randomId, randomToken, safeEqual, sha256 } from "./crypto.ts";
 import type { Deps } from "./deps.ts";
-import type { App } from "./store.ts";
+import { agentCompany } from "./logos.ts";
+import type { App, Connection } from "./store.ts";
 
 const CODE_TTL_MS = 5 * 60_000;
 const ACCESS_TTL_S = 60 * 60;
@@ -103,6 +105,23 @@ export function redirectMatches(registered: string, requested: string): boolean 
   }
   if (a.protocol !== "http:" || b.protocol !== "http:" || !isLoopback(a.hostname) || a.hostname !== b.hostname) return false;
   return a.pathname === b.pathname && a.search === b.search && !b.hash;
+}
+
+/**
+ * True if the code of the request goes to a place that the user can trust: a
+ * program on the computer of the user, or the site of an agent company that
+ * Gulpy knows. A different site does not pass. With no approval step, one
+ * link to that site would give it the tools of each person who is signed in.
+ */
+export function isTrustedReturn(redirectUri: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "http:") return isLoopback(url.hostname);
+  return agentCompany(redirectUri) !== undefined;
 }
 
 function cleanName(value: unknown): string {
@@ -295,11 +314,84 @@ export interface Selection {
   level: AccessLevel;
 }
 
+const levelText = (level: AccessLevel, automatic: boolean): string =>
+  `${level === "write" ? "Read and write" : "Read only"}${automatic ? " · automatic" : ""}`;
+
+/**
+ * Approves the request with no step for the user, if the rules permit it. A
+ * new agent gets each connection that works, with read and write access. An
+ * agent that the user approved before keeps what it has. Returns null if the
+ * user must see the approval page.
+ */
+export function approveWithNoTap(
+  deps: Deps,
+  request: AuthorizeRequest,
+  userId: string,
+): { to: string; connections: Connection[] } | null {
+  if (!deps.config.autoApprove || !isTrustedReturn(request.redirectUri)) return null;
+  const usable = (connection: Connection) => connection.status === "active" && backendOf(deps, connection) !== null;
+  const mine = deps.store.connectionsByUser(userId);
+  const grants = new Map(deps.store.grantsForAppUser(request.app.id, userId).map((grant) => [grant.connectionId, grant]));
+
+  const selections: Selection[] =
+    grants.size > 0
+      ? mine.flatMap((connection) => {
+          const grant = grants.get(connection.id);
+          return grant ? [{ connectionId: connection.id, level: levelOf(grant.capabilities) }] : [];
+        })
+      : mine.filter(usable).map((connection) => ({ connectionId: connection.id, level: "write" }));
+  const chosen = new Set(selections.map((selection) => selection.connectionId));
+  const connections = mine.filter((connection) => chosen.has(connection.id) && usable(connection));
+  // With nothing to give, the user must add a tool or connect one again. The approval page has the buttons.
+  if (connections.length === 0) return null;
+  return { to: approveAgent(deps, request, userId, selections, true), connections };
+}
+
+/**
+ * Gives a new connection to each agent that the user approved before, so that
+ * a new tool needs no approval. An agent that has read access only gets read access.
+ */
+export function shareWithAgents(deps: Deps, userId: string, connection: Connection): void {
+  if (!deps.config.autoApprove) return;
+  const now = deps.now();
+  for (const appId of deps.store.agentsOfUser(userId, now)) {
+    if (deps.store.grant(appId, connection.id)) continue;
+    const held = deps.store.grantsForAppUser(appId, userId);
+    const level: AccessLevel =
+      held.length > 0 && held.every((grant) => levelOf(grant.capabilities) === "read") ? "read" : "write";
+    deps.store.upsertGrant({
+      id: randomId("grant"),
+      userId,
+      appId,
+      connectionId: connection.id,
+      capabilities: capabilitiesAt(level, connection.capabilities),
+      createdAt: now,
+      updatedAt: now,
+    });
+    deps.store.audit({
+      ts: now,
+      userId,
+      appId,
+      connectionId: connection.id,
+      action: "grant.approve",
+      detail: levelText(level, true),
+      status: null,
+    });
+  }
+}
+
 /**
  * Stores what the user selected and makes the authorization code. The
  * selection is the full list: a connection that is not in it loses its access.
+ * `automatic`: Gulpy made the selection, and the list of calls says so.
  */
-export function approveAgent(deps: Deps, request: AuthorizeRequest, userId: string, selections: readonly Selection[]): string {
+export function approveAgent(
+  deps: Deps,
+  request: AuthorizeRequest,
+  userId: string,
+  selections: readonly Selection[],
+  automatic = false,
+): string {
   const now = deps.now();
   const chosen = new Map(selections.map((selection) => [selection.connectionId, selection.level]));
   const code = randomToken("code");
@@ -328,7 +420,7 @@ export function approveAgent(deps: Deps, request: AuthorizeRequest, userId: stri
         appId: request.app.id,
         connectionId: connection.id,
         action: "grant.approve",
-        detail: level === "write" ? "Read and write" : "Read only",
+        detail: levelText(level, automatic),
         status: null,
       });
     }

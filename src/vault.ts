@@ -99,24 +99,39 @@ export function tokenApi(deps: Deps, provider: { id: string; name: string }, tok
   };
 }
 
+/** A value that starts with this was sealed with the key of its user. */
+const USER_KEY_MARK = "u1.";
+
 /**
  * Holds provider tokens. Tokens are encrypted at rest and the plain values
  * never leave this module except inside a request to the provider.
+ *
+ * Each user has a vault key of their own, which comes from the master key and
+ * the id of the user. The token of one user does not open with the key of a
+ * different user.
  */
 export class Vault {
-  private readonly key: Buffer;
+  /** The one key of the first version. It opens the values from before the user keys. */
+  private readonly shared: Buffer;
   private readonly refreshing = new Map<string, Promise<string>>();
 
   constructor(private readonly deps: Deps) {
-    this.key = deriveKey(deps.config.masterKey, "connecty/vault/v1");
+    this.shared = deriveKey(deps.config.masterKey, "connecty/vault/v1");
   }
 
-  seal(connectionId: string, kind: "access" | "refresh", token: string): string {
-    return seal(this.key, token, `${connectionId}:${kind}`);
+  /** Do not change the label: the stored tokens become unreadable. */
+  private userKey(userId: string): Buffer {
+    return deriveKey(this.deps.config.masterKey, `gulpy/vault/user/v1:${userId}`);
   }
 
-  private open(connectionId: string, kind: "access" | "refresh", sealed: string): string {
-    return open(this.key, sealed, `${connectionId}:${kind}`);
+  seal(userId: string, connectionId: string, kind: "access" | "refresh", token: string): string {
+    return USER_KEY_MARK + seal(this.userKey(userId), token, `${connectionId}:${kind}`);
+  }
+
+  private open(connection: Connection, kind: "access" | "refresh", sealed: string): string {
+    const aad = `${connection.id}:${kind}`;
+    if (!sealed.startsWith(USER_KEY_MARK)) return open(this.shared, sealed, aad);
+    return open(this.userKey(connection.userId), sealed.slice(USER_KEY_MARK.length), aad);
   }
 
   /** Returns a token that is valid now. Refreshes it if necessary. */
@@ -124,7 +139,7 @@ export class Vault {
     // Read the row again. The caller can hold a copy from before a refresh.
     const connection = this.deps.store.connectionById(given.id) ?? given;
     const fresh = connection.expiresAt === null || connection.expiresAt - this.deps.now() > REFRESH_MARGIN_MS;
-    if (fresh && !force) return this.open(connection.id, "access", connection.accessTokenEnc);
+    if (fresh && !force) return this.open(connection, "access", connection.accessTokenEnc);
 
     // One refresh at a time for each connection. Some providers rotate the refresh token.
     const running = this.refreshing.get(connection.id);
@@ -141,7 +156,7 @@ export class Vault {
       this.deps.store.setConnectionStatus(connection.id, "needs_reauth");
       throw new ReauthRequired(connection.id);
     }
-    const result = await client.refresh(this.open(connection.id, "refresh", connection.refreshTokenEnc));
+    const result = await client.refresh(this.open(connection, "refresh", connection.refreshTokenEnc));
     if (!result.ok) {
       if (result.status === 400 || result.status === 401) {
         this.deps.store.setConnectionStatus(connection.id, "needs_reauth");
@@ -152,8 +167,10 @@ export class Vault {
     const { token } = result;
     this.deps.store.updateConnectionTokens(
       connection.id,
-      this.seal(connection.id, "access", token.access_token),
-      token.refresh_token ? this.seal(connection.id, "refresh", token.refresh_token) : connection.refreshTokenEnc,
+      this.seal(connection.userId, connection.id, "access", token.access_token),
+      token.refresh_token
+        ? this.seal(connection.userId, connection.id, "refresh", token.refresh_token)
+        : connection.refreshTokenEnc,
       token.expires_in ? this.deps.now() + token.expires_in * 1000 : null,
     );
     return token.access_token;
@@ -189,7 +206,7 @@ export class Vault {
     const sealed = connection.refreshTokenEnc ?? connection.accessTokenEnc;
     const kind = connection.refreshTokenEnc ? "refresh" : "access";
     try {
-      await client.revoke(this.open(connection.id, kind, sealed));
+      await client.revoke(this.open(connection, kind, sealed));
     } catch {
       // The connection is deleted locally in each case.
     }

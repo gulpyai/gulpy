@@ -24,6 +24,8 @@ export interface Config {
   dbPath: string;
   /** 32 bytes. Encrypts provider tokens at rest. */
   masterKey: Buffer;
+  /** Gulpy writes a copy of the database to this folder each day. Not set: no copies. */
+  backupDir?: string;
   google?: ProviderCredentials;
   microsoft?: ProviderCredentials;
   /**
@@ -40,6 +42,12 @@ export interface Config {
    */
   connectorClients: Record<string, ProviderCredentials>;
   stripe?: StripeConfig;
+  /**
+   * True: an agent that Gulpy knows, or a program on the computer of the user, connects
+   * with no approval step, and a new connection goes to each agent of the user.
+   * False: the user approves each agent. Set `GULPY_AUTO_APPROVE=off` for false.
+   */
+  autoApprove: boolean;
 }
 
 /** Connectors that need an OAuth app that the operator registers by hand. */
@@ -133,6 +141,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     baseUrl,
     dbPath: overrides.dbPath ?? process.env.GULPY_DB ?? ".data/gulpy.db",
     masterKey: overrides.masterKey ?? loadMasterKey(env),
+    backupDir: overrides.backupDir ?? (process.env.GULPY_BACKUP_DIR || undefined),
     google: overrides.google ?? credentials(env, "GOOGLE"),
     microsoft: overrides.microsoft ?? credentials(env, "MICROSOFT"),
     rawProxy:
@@ -144,5 +153,6 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     customConnectors: overrides.customConnectors ?? [],
     connectorClients: overrides.connectorClients ?? connectorClients(env),
     stripe: overrides.stripe ?? stripeConfig(env),
+    autoApprove: overrides.autoApprove ?? process.env.GULPY_AUTO_APPROVE !== "off",
   };
 }

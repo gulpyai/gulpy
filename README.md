@@ -4,7 +4,8 @@ One login for all your AI plugins.
 
 ChatGPT, Claude and Grok each have a list of plugins. You connect the same tools
 again in each one. Gulpy is one place for your connections. You add one address
-to each agent, a window opens, you tap **Allow**, and the agent has your tools.
+to each agent, and the agent has your tools. An agent that Gulpy knows needs no
+approval step. See [Approval with no tap](#approval-with-no-tap).
 
 "Plug", read from right to left, is "gulp". The mascot is a plug that eats tools.
 
@@ -37,10 +38,10 @@ Do these steps:
 1. Open Gulpy. Sign in with an email address. On this computer no mail goes out, so
    the page fills in the code.
 2. Select **+** on a tool, for example Notion or Linear. You sign in at the provider.
-3. Open Orbit. Select **Connect with Gulpy**. A window opens. Select **Allow**.
-   Gulpy eats the tools and the window closes.
+3. Open Orbit. Select **Connect with Gulpy**. A window opens. Orbit is on this
+   computer, so Gulpy eats the tools and the window closes. You approve nothing.
 4. Ask Orbit a question about your tools.
-5. Open Scout. Connect it. This is the one-tap flow.
+5. Open Scout. Connect it. Add a new tool in Gulpy: Orbit and Scout get it.
 6. Open Gulpy. You see the agents and each call. Remove the access of one agent.
 
 Orbit and Scout think with the `claude` command of this computer, with your Claude
@@ -139,7 +140,37 @@ This follows the MCP authorization specification: OAuth 2.1 with PKCE, protected
 resource metadata (RFC 9728), server metadata (RFC 8414), dynamic client
 registration (RFC 7591), and client ID metadata documents. The specification
 forbids a server to pass on the token of the agent. It permits a proxy that has
-consent for each client. Gulpy is that proxy.
+consent for each client.
+
+With `GULPY_AUTO_APPROVE=off`, Gulpy is that proxy. With the default, Gulpy does
+not obey one rule: the specification says that a proxy MUST get the consent of
+the user for each client
+([security best practices](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices)).
+Gulpy gives the consent for the user if the agent is a known one. The attack that
+the rule prevents needs a return address on the site of the attacker, and such an
+address gets the approval page.
+
+## Approval with no tap
+
+The user connects a tool one time. After that, Gulpy does the approval for the user.
+
+| The agent sends the user back to | What the user does |
+|---|---|
+| A program on the computer of the user (`http://localhost`, `http://127.0.0.1`): Claude Code, Codex | Nothing |
+| The site of an agent company that Gulpy knows: `claude.ai`, `claude.com`, `chatgpt.com`, `chat.openai.com`, `grok.com`, `x.ai`, and `cursor://` | Nothing |
+| A different site | One tap on **Allow**, one time |
+
+- A new agent gets each connection that works, with read and write access.
+- A new connection goes to each agent that the user has. An agent that has read access only gets read access.
+- An agent that connects again keeps what it has.
+- A person who is not signed in to Gulpy signs in first, with an email code.
+- The list of calls shows each automatic approval.
+
+A site that Gulpy does not know keeps the approval page for a reason. Each agent can
+register itself. With no approval page, one link to a bad site gives that site the tools
+of each person who is signed in. The return address is the proof, not the name of the agent.
+
+Set `GULPY_AUTO_APPROVE=off` and the user approves each agent, as before.
 
 ## Link: connect from your own page
 
@@ -205,6 +236,8 @@ All paths start with `/v1`. Errors have the shape `{ "error": { "code", "message
 | `RESEND_API_KEY`, `MAIL_FROM` | not set | Sends sign-in codes by email. Necessary in production. |
 | `GULPY_RAW_PROXY` | none | Provider ids for which `/v1/proxy` is on. Keep Google and Microsoft out. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | not set | Paid plans through Stripe. See [Paid plans](#paid-plans). Without them, each person is on Free. |
+| `GULPY_AUTO_APPROVE` | on | `off`: the user approves each agent. See [Approval with no tap](#approval-with-no-tap). |
+| `GULPY_BACKUP_DIR` | not set | Gulpy writes a copy of the database to this folder each day and keeps 14 copies. |
 
 In development on macOS, each secret can also sit in the Keychain: `gulpy-stripe-secret-key`, `gulpy-stripe-webhook-secret`, and the same pattern for the provider credentials.
 
@@ -226,6 +259,8 @@ What a plan changes: a person on Free keeps 7 days of calls in the activity list
 | Threat | Control |
 |---|---|
 | The database is stolen | Tokens and client registrations are encrypted with AES-256-GCM. Each value is bound to its row. Secrets of apps, access tokens, refresh tokens and session IDs are stored as hashes only. |
+| A fault gives the row of one user to a different user | Each user has a vault key of their own. It comes from the master key and the id of the user. The token of one user does not open with the key of a different user. |
+| A link makes the browser of a user approve an agent | Gulpy approves with no tap only if the code goes to the computer of the user or to the site of a known agent company. A different site gets the approval page. |
 | An agent does more than the user approved | The agent never gets the token of a connector. Gulpy reads the grant on each call. Read access gives only the tools that say that they only read. |
 | A false agent asks for access | The approval page shows where the agent returns the user to, and says that the agent is not verified. Gulpy redirects only to a registered address. |
 | A copy of a refresh token | A refresh token works one time. A second use cancels all tokens of that sign-in. |
@@ -244,6 +279,11 @@ Known gaps:
 - The agents that register automatically are not verified. Gulpy has no list of
   known agents yet.
 - No rate limits. One server process only: the refresh lock is in memory.
+- With automatic approval, the user does not see which agent connects. If a known agent
+  company does not bind its sign-in to the browser session of the user, a link can
+  connect the tools of the user to the account of a different person at that company.
+  Gulpy did not test the agent companies for this.
+- The copies of the database are on the disk of the server. A copy in a different place is not made.
 
 ## Logos
 
@@ -268,7 +308,8 @@ src/
   agents.ts         Gulpy as an OAuth server for agents
   upstream/         Gulpy as a client of an upstream MCP server
   service.ts        tools, mail, calendar and proxy operations
-  vault.ts          token encryption and refresh
+  vault.ts          token encryption and refresh, with one key for each user
+  backup.ts         the daily copy of the database
   store.ts          all SQL (SQLite), with migrations
   link.ts           Link: tokens, account choices, approval
   oauth.ts          sign-in at a provider that has its own API
@@ -278,7 +319,9 @@ src/
   views/            the pages
 examples/
   agent/            Orbit and Scout. They think with the `claude` command.
-scripts/            dev.ts, check-catalog.ts, fetch-logos.py, make-social.py (the picture for link previews)
+scripts/            dev.ts, check-catalog.ts, fetch-logos.py, make-social.py (the picture for link previews),
+                    deploy-vm.sh (puts Gulpy on a server)
+deploy/             compose.yml: the app and the Cloudflare tunnel on a server
 Dockerfile          Gulpy for a host
 test/               end-to-end tests. They use no network.
   fixtures/         a mail provider and MCP connectors for the tests only
@@ -287,7 +330,7 @@ test/               end-to-end tests. They use no network.
 ## Tests
 
 ```sh
-bun test          # 122 tests
+bun test
 bun run typecheck
 ```
 
@@ -303,10 +346,13 @@ Verified:
 - The registration of Gulpy at 24 real connectors. Their sign-in pages show the name "Gulpy".
 
 - Gulpy in production mode with the real address setting (`https://gulpy.ai`).
+- On 2026-09-29, Gulpy on a server (`https://cloud.gulpy.ai`, Google Cloud, Docker, Cloudflare
+  tunnel): the container build from `Dockerfile`, sign-in with a code that Resend sent to a real
+  mailbox, the dashboard, the registration of an agent, and the registration of Gulpy at Linear
+  and Notion, which sent the browser to their sign-in pages.
 
 Not verified:
 
-- The container build from `Dockerfile`.
 - **The sign-in of a user at a real connector, and a tool call with a real account.**
   This needs your accounts. Select **+** on a tool to try it.
 - The Google and Microsoft adapters did not run against the real services. They show **Beta**.
@@ -328,6 +374,18 @@ Not built yet:
 
 Gulpy is one process with one SQLite file. You can run it on your own server and keep
 all your connections there.
+
+On a server that has Docker, one command does all the steps. It makes the master key, makes
+a Cloudflare tunnel for the public `https` address, sends the code, and starts Gulpy:
+
+```sh
+GULPY_VM=<ssh host> GULPY_HOST=<name in your domain> scripts/deploy-vm.sh
+```
+
+Run it again to send new code. The data stays. The secrets are on the server in `/etc/gulpy`,
+which only root can read. A copy of the master key stays in the macOS Keychain as `gulpy-vm-master-key`.
+
+By hand:
 
 1. Copy `.env.example` to `.env`.
 2. Set `GULPY_BASE_URL` to your public `https` address.

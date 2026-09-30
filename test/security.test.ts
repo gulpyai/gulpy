@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { safeNext } from "../src/auth.ts";
-import { open, seal } from "../src/crypto.ts";
+import { deriveKey, open, seal } from "../src/crypto.ts";
 import { parseOrigin } from "../src/link.ts";
 import { buildMimeMessage } from "../src/providers/mime.ts";
+import type { TokenClient } from "../src/vault.ts";
 import {
   ACME,
   ALICE,
@@ -47,8 +48,8 @@ describe("tokens at rest", () => {
     const rows = world.gulpy.deps.store.db.query("SELECT * FROM connections").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
     const row = rows[0] ?? {};
-    expect(String(row.access_token_enc)).toStartWith("v1.");
-    expect(String(row.refresh_token_enc)).toStartWith("v1.");
+    expect(String(row.access_token_enc)).toStartWith("u1.v1.");
+    expect(String(row.refresh_token_enc)).toStartWith("u1.v1.");
     // An Acme Mail token looks like "acme.<payload>.<signature>".
     expect(JSON.stringify(row)).not.toMatch(/acme\.[A-Za-z0-9_-]{20,}\./);
   });
@@ -73,6 +74,51 @@ describe("tokens at rest", () => {
     expect(() => open(key, sealed, "conn_2:refresh")).toThrow();
     expect(() => open(randomBytes(32), sealed, "conn_1:refresh")).toThrow();
     expect(seal(key, "refresh-token-value", "conn_1:refresh")).not.toBe(sealed);
+  });
+});
+
+describe("the vault of each user", () => {
+  /** The vault does not call the provider for a token that did not expire. */
+  const noCalls: TokenClient = {
+    id: "demo",
+    name: "Acme Mail",
+    refresh: () => Promise.reject(new Error("The vault called the provider")),
+  };
+  const stored = () => {
+    const { store } = world.gulpy.deps;
+    const row = store.db.query("SELECT id FROM connections").get() as { id: string };
+    const connection = store.connectionById(row.id);
+    if (!connection) throw new Error("No connection");
+    return connection;
+  };
+
+  test("the token of one user does not open with the key of a different user", async () => {
+    await connectFirstTime(world, browser, inboxPilot, { email: EMAIL, capabilities: ["email.read"] });
+    const { store } = world.gulpy.deps;
+    const mine = stored();
+    expect(await world.gulpy.vault.accessToken(mine, noCalls)).toStartWith("acme.");
+
+    // The row moves to a different user, as a fault in the code or in the database can do.
+    const other = store.createUser("usr_other", "other@example.com", 0);
+    store.db.query("UPDATE connections SET user_id = ? WHERE id = ?").run(other.id, mine.id);
+    expect(stored().userId).toBe(other.id);
+    expect(world.gulpy.vault.accessToken(stored(), noCalls)).rejects.toThrow();
+  });
+
+  test("a token from before the user keys opens, and the next refresh seals it with the key of the user", async () => {
+    await connectFirstTime(world, browser, inboxPilot, { email: EMAIL, capabilities: ["email.read"] });
+    const { store, config } = world.gulpy.deps;
+    const mine = stored();
+    const token = await world.gulpy.vault.accessToken(mine, noCalls);
+
+    const before = deriveKey(config.masterKey, "connecty/vault/v1");
+    store.db.query("UPDATE connections SET access_token_enc = ? WHERE id = ?").run(seal(before, token, `${mine.id}:access`), mine.id);
+    expect(stored().accessTokenEnc).toStartWith("v1.");
+    expect(await world.gulpy.vault.accessToken(stored(), noCalls)).toBe(token);
+
+    const renew: TokenClient = { ...noCalls, refresh: async () => ({ ok: true, token: { access_token: "acme.new-token" } }) };
+    expect(await world.gulpy.vault.accessToken(stored(), renew, true)).toBe("acme.new-token");
+    expect(stored().accessTokenEnc).toStartWith("u1.v1.");
   });
 });
 

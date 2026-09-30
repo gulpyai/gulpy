@@ -74,12 +74,19 @@ export function beginAuthorization(
   return url.toString();
 }
 
+/** The result of a sign-in at a provider. `created`: the user did not have this account in Gulpy before. */
+export interface Connected {
+  connection: Connection;
+  returnTo: string;
+  created: boolean;
+}
+
 /** Completes the flow and stores the connection. Throws OAuthError. */
 export async function completeAuthorization(
   deps: Deps,
   vault: Vault,
   input: { provider: Provider; userId: string; state: string; code?: string; error?: string },
-): Promise<{ connection: Connection; returnTo: string }> {
+): Promise<Connected> {
   const { provider } = input;
   const state = deps.store.takeOAuthState(sha256(input.state));
   // The state must belong to the browser session that started the flow.
@@ -120,9 +127,9 @@ export async function completeAuthorization(
         accountLabel: account.label,
         capabilities,
         scopes,
-        accessTokenEnc: vault.seal(existing.id, "access", token.access_token),
+        accessTokenEnc: vault.seal(input.userId, existing.id, "access", token.access_token),
         refreshTokenEnc: token.refresh_token
-          ? vault.seal(existing.id, "refresh", token.refresh_token)
+          ? vault.seal(input.userId, existing.id, "refresh", token.refresh_token)
           : existing.refreshTokenEnc,
         expiresAt,
         status: "active",
@@ -139,8 +146,8 @@ export async function completeAuthorization(
       accountLabel: account.label,
       capabilities,
       scopes,
-      accessTokenEnc: vault.seal(id, "access", token.access_token),
-      refreshTokenEnc: token.refresh_token ? vault.seal(id, "refresh", token.refresh_token) : null,
+      accessTokenEnc: vault.seal(input.userId, id, "access", token.access_token),
+      refreshTokenEnc: token.refresh_token ? vault.seal(input.userId, id, "refresh", token.refresh_token) : null,
       expiresAt,
       status: "active",
       tools: null,
@@ -160,5 +167,5 @@ export async function completeAuthorization(
     detail: `${provider.name} · ${account.label}`,
     status: null,
   });
-  return { connection, returnTo: state.returnTo };
+  return { connection, returnTo: state.returnTo, created: !existing };
 }

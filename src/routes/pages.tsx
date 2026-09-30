@@ -1,7 +1,16 @@
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import { backendOf, tokensFor } from "../access.ts";
-import { approveAgent, checkAuthorize, findAgent, redirectWith, type Selection } from "../agents.ts";
+import {
+  approveAgent,
+  approveWithNoTap,
+  checkAuthorize,
+  findAgent,
+  isTrustedReturn,
+  redirectWith,
+  shareWithAgents,
+  type Selection,
+} from "../agents.ts";
 import {
   checkCsrf,
   endSession,
@@ -18,7 +27,7 @@ import { isLocalAddress } from "../config.ts";
 import { randomId, randomToken, sha256 } from "../crypto.ts";
 import type { Deps } from "../deps.ts";
 import { approveLink, findLink, linkChoices, linkStatus, parseOrigin } from "../link.ts";
-import { beginAuthorization, completeAuthorization, OAuthError } from "../oauth.ts";
+import { beginAuthorization, completeAuthorization, OAuthError, type Connected } from "../oauth.ts";
 import { agentChoices, viewCatalog, viewConnection, viewConnections } from "../present.ts";
 import { beginUpstream, completeUpstream } from "../upstream/oauth.ts";
 import type { Vault } from "../vault.ts";
@@ -166,7 +175,8 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     }
     if (next.pathname === "/oauth/authorize") {
       const agent = await findAgent(deps, next.searchParams.get("client_id") ?? undefined);
-      if (agent) return render(c, <AgentSignIn app={agent} state={state} />, status);
+      const noTap = deps.config.autoApprove && isTrustedReturn(next.searchParams.get("redirect_uri") ?? "");
+      if (agent) return render(c, <AgentSignIn app={agent} state={state} noTap={noTap} />, status);
     }
     return render(c, <Landing model={landing(state)} />, status);
   };
@@ -226,7 +236,17 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     const url = new URL(c.req.url);
     const here = withoutParams(url.pathname + url.search, ["connected", "notice"]);
     const current = viewer(deps, c);
-    if (!current) return render(c, <AgentSignIn app={check.request.app} state={{ next: here }} />);
+    if (!current) {
+      const noTap = deps.config.autoApprove && isTrustedReturn(check.request.redirectUri);
+      return render(c, <AgentSignIn app={check.request.app} state={{ next: here }} noTap={noTap} />);
+    }
+
+    // An agent that Gulpy knows, or a program on this computer, gets the tools with no approval step.
+    const approved = approveWithNoTap(deps, check.request, current.user.id);
+    if (approved) {
+      const logos = approved.connections.flatMap((connection) => viewConnection(deps, connection)?.logo ?? []);
+      return render(c, <AgentDone to={approved.to} name={check.request.app.name} logos={logos} allowed />);
+    }
 
     const grants = deps.store.grantsForAppUser(check.request.app.id, current.user.id);
     const params: Record<string, string> = {};
@@ -379,13 +399,14 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
 
   // The provider sends the user back here
 
-  const afterConnect = async (c: Context, complete: (userId: string) => Promise<{ connection: { id: string }; returnTo: string }>) => {
+  const afterConnect = async (c: Context, complete: (userId: string) => Promise<Connected>) => {
     const current = viewer(deps, c);
     if (!current) {
       return render(c, <LinkProblem title="Sign-in did not complete" detail="Your session ended. Start again." />, 400);
     }
     try {
-      const { connection, returnTo } = await complete(current.user.id);
+      const { connection, returnTo, created } = await complete(current.user.id);
+      if (created) shareWithAgents(deps, current.user.id, connection);
       const next = safeNext(returnTo);
       return c.redirect(next === "/" ? "/?ok=connected" : withParam(next, "connected", connection.id), 303);
     } catch (error) {
@@ -508,6 +529,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
         target: entry.connectionId ? (byId.get(entry.connectionId)?.name ?? entry.detail?.split(" · ")[0] ?? "Removed tool") : null,
       })),
       mcpUrl: `${deps.config.baseUrl}/mcp`,
+      noTap: deps.config.autoApprove,
       local: /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(deps.config.baseUrl),
       calls: deps.store.countCalls(current.user.id, now - 7 * 24 * 60 * 60_000),
       now,

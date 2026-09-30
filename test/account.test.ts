@@ -1,5 +1,10 @@
 /** The legal duties that the code must keep: consent, sign-in cookie, export, deletion, retention, HSTS. */
+import { Database } from "bun:sqlite";
 import { beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { backUp } from "../src/backup.ts";
 import { LEGAL } from "../src/brand.ts";
 import { cleanUp } from "../src/cleanup.ts";
 import { connectFirstTime, createWorld, field, GULPY, type Browser, type TestApp, type World } from "./harness.ts";
@@ -168,6 +173,28 @@ describe("retention", () => {
     const calls = store.db.query("SELECT ts FROM audit_log").all();
     expect(calls).toHaveLength(1);
     expect(store.db.query("SELECT * FROM otps").all()).toHaveLength(0);
+  });
+});
+
+describe("copies of the database", () => {
+  test("a copy has the rows, has no token in plain text, and the old copies go away", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "gulpy-backup-"));
+    try {
+      await browser.signIn(world, EMAIL);
+      for (let day = 0; day < 16; day++) {
+        backUp(world.gulpy.deps, dir);
+        world.advance(24 * 60 * 60_000);
+      }
+      const copies = readdirSync(dir).sort();
+      expect(copies).toHaveLength(14);
+      expect(copies[0]).toBe("gulpy-2026-09-29.db");
+
+      const copy = new Database(join(dir, copies[13] ?? ""), { readonly: true });
+      expect(copy.query("SELECT email FROM users").all()).toEqual([{ email: EMAIL }]);
+      copy.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

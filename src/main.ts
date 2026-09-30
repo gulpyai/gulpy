@@ -1,4 +1,5 @@
 import { createApp, createDeps } from "./app.ts";
+import { startBackups } from "./backup.ts";
 import { startCleanup } from "./cleanup.ts";
 import { loadConfig } from "./config.ts";
 import type { Mailer } from "./deps.ts";
@@ -19,6 +20,7 @@ function mailer(): Mailer {
 const { app, deps } = await createApp(createDeps({ config, mailer: mailer() }));
 
 startCleanup(deps);
+if (config.backupDir) startBackups(deps, config.backupDir);
 Bun.serve({ port: config.port, fetch: app.fetch });
 
 console.log(`[gulpy] ${config.baseUrl} (${config.env})`);
@@ -28,3 +30,4 @@ console.log(
     ? `[gulpy] paid plans: on (${config.stripe.secretKey.startsWith("sk_live_") ? "live" : "test"} mode)`
     : "[gulpy] paid plans: off. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET to sell plans.",
 );
+console.log(`[gulpy] approval: ${config.autoApprove ? "automatic for known agents" : "the user approves each agent"}`);

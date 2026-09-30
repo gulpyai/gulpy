@@ -56,6 +56,8 @@ export async function createWorld(
     stripe?: StripeConfig;
     /** Other servers of the test, by origin. For example a Stripe for the tests. */
     origins?: Record<string, { fetch(request: Request): Response | Promise<Response> }>;
+    /** False: the user approves each agent, also an agent that Gulpy knows. */
+    autoApprove?: boolean;
   } = {},
 ): Promise<World> {
   let clock = Date.parse("2026-09-27T12:00:00Z");
@@ -76,6 +78,7 @@ export async function createWorld(
     ],
     connectorClients: {},
     stripe: options.stripe,
+    autoApprove: options.autoApprove ?? true,
   };
 
   // A mail provider and MCP connectors for the tests. The product has none of them.
@@ -543,6 +546,21 @@ export class TestAgent implements OAuthClientProvider {
   /** Signs in from start to end with what the approval page selects. */
   async connect(browser: Browser, options: { select?: string[]; levels?: Record<string, "read" | "write"> } = {}) {
     return this.allow(browser, await this.start(browser), options);
+  }
+
+  /** Completes the sign-in from the page that sends the browser back to the agent. The user did not approve on a page. */
+  async finish(page: Page) {
+    const back = new URL(leaveAddress(page.html));
+    const code = back.searchParams.get("code");
+    if (!code) throw new Error(`No code: ${back.search}`);
+    const result = await auth(this, { serverUrl: `${GULPY}/mcp`, authorizationCode: code, fetchFn: this.world.fetch });
+    if (result !== "AUTHORIZED") throw new Error("The agent did not get tokens");
+    return back;
+  }
+
+  /** Signs in from start to end, for an agent that needs no approval step. */
+  async connectWithNoTap(browser: Browser) {
+    return this.finish(await this.start(browser));
   }
 
   /** An MCP client that uses the tokens of this agent. */

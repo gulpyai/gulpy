@@ -60,20 +60,26 @@ function parse(address: string): URL | null {
   }
 }
 
+/** The agent company that owns a return address, for example `claude`. */
+export function agentCompany(address: string): string | undefined {
+  const url = parse(address);
+  if (!url) return undefined;
+  for (const [id, hosts] of Object.entries(AGENT_HOSTS)) {
+    if (url.protocol === "https:" && hosts.includes(url.hostname)) return id;
+  }
+  for (const [id, scheme] of Object.entries(AGENT_SCHEMES)) {
+    if (url.protocol === scheme) return id;
+  }
+  return undefined;
+}
+
 /**
  * The logo of the company that operates an agent. An agent gives its own
  * name, so the name is not proof. The proof is the return address: the logo
  * shows only if each return address of the agent is on the site of the company.
  */
 export function agentLogo(redirectUris: readonly string[]): LogoImage | undefined {
-  const urls = redirectUris.map(parse);
-  if (urls.length === 0 || urls.some((url) => url === null)) return undefined;
-  const all = urls as URL[];
-  for (const [id, hosts] of Object.entries(AGENT_HOSTS)) {
-    if (all.every((url) => url.protocol === "https:" && hosts.includes(url.hostname))) return logoImage(id);
-  }
-  for (const [id, scheme] of Object.entries(AGENT_SCHEMES)) {
-    if (all.every((url) => url.protocol === scheme)) return logoImage(id);
-  }
-  return undefined;
+  const [first, ...others] = redirectUris.map(agentCompany);
+  if (first === undefined || others.some((company) => company !== first)) return undefined;
+  return logoImage(first);
 }

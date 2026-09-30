@@ -20,7 +20,7 @@ import { BRAND } from "../brand.ts";
 import type { Connector } from "../catalog.ts";
 import { deriveKey, open, randomId, randomToken, seal, sha256 } from "../crypto.ts";
 import type { Deps } from "../deps.ts";
-import { OAuthError } from "../oauth.ts";
+import { OAuthError, type Connected } from "../oauth.ts";
 import type { Connection } from "../store.ts";
 import type { TokenClient, TokenResult, Vault } from "../vault.ts";
 import { fetchTools } from "./client.ts";
@@ -286,7 +286,7 @@ export async function completeUpstream(
   deps: Deps,
   vault: Vault,
   input: { userId: string; state: string; code?: string; error?: string },
-): Promise<{ connection: Connection; returnTo: string }> {
+): Promise<Connected> {
   const state = deps.store.takeOAuthState(sha256(input.state));
   const connector = state ? deps.catalog.get(state.provider) : undefined;
   // The state must belong to the browser session that started the flow.
@@ -323,9 +323,9 @@ export async function completeUpstream(
     accountLabel: account.label,
     capabilities: state.capabilities,
     scopes,
-    accessTokenEnc: vault.seal(id, "access", tokens.access_token),
+    accessTokenEnc: vault.seal(input.userId, id, "access", tokens.access_token),
     refreshTokenEnc: tokens.refresh_token
-      ? vault.seal(id, "refresh", tokens.refresh_token)
+      ? vault.seal(input.userId, id, "refresh", tokens.refresh_token)
       : (existing?.refreshTokenEnc ?? null),
     expiresAt,
     status: "active" as const,
@@ -361,5 +361,5 @@ export async function completeUpstream(
     status: null,
   });
   const connection = deps.store.connectionById(id) ?? stored;
-  return { connection, returnTo: state.returnTo };
+  return { connection, returnTo: state.returnTo, created: !existing };
 }

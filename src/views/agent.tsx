@@ -42,7 +42,8 @@ function identityHost(app: App): string | null {
   }
 }
 
-export const AgentSignIn: FC<{ app: App; state: SignInState }> = ({ app, state }) => (
+/** `noTap`: after the sign-in, the agent gets the tools with no approval step. */
+export const AgentSignIn: FC<{ app: App; state: SignInState; noTap?: boolean }> = ({ app, state, noTap }) => (
   <LinkPage title={`Connect ${app.name}`}>
     <header class="link-head">
       <Pair app={app} />
@@ -50,7 +51,9 @@ export const AgentSignIn: FC<{ app: App; state: SignInState }> = ({ app, state }
         {app.name} wants to use your tools
       </h1>
       <p class="muted">
-        Sign in to {BRAND.name}. Then select what {app.name} can use.
+        {noTap
+          ? `Sign in to ${BRAND.name}. Then ${app.name} gets your tools.`
+          : `Sign in to ${BRAND.name}. Then select what ${app.name} can use.`}
       </p>
     </header>
     <div class="link-stack">

@@ -1001,6 +1001,20 @@ export class Store {
     return this.run("DELETE FROM grants WHERE app_id = ? AND user_id = ?", appId, userId);
   }
 
+  /** The agents that the user approved: each agent that has a grant, or a refresh token that works. */
+  agentsOfUser(userId: string, now: number): string[] {
+    return this.all(
+      `SELECT a.id FROM apps a WHERE a.kind = 'agent' AND (
+         EXISTS (SELECT 1 FROM grants g WHERE g.app_id = a.id AND g.user_id = ?)
+         OR EXISTS (SELECT 1 FROM refresh_tokens t WHERE t.app_id = a.id AND t.user_id = ?
+                    AND t.revoked_at IS NULL AND t.used_at IS NULL AND t.expires_at > ?)
+       ) ORDER BY a.created_at, a.id`,
+      userId,
+      userId,
+      now,
+    ).map((row) => String(row.id));
+  }
+
   // Link sessions
 
   createLinkSession(session: LinkSession, tokenHash: string, now: number): void {

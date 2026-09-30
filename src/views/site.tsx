@@ -255,6 +255,8 @@ export interface DashboardModel {
   }[];
   /** The address that the user gives to an agent. */
   mcpUrl: string;
+  /** True if an agent that Gulpy knows connects with no approval step. */
+  noTap: boolean;
   /** True if only this computer can reach the address. */
   local: boolean;
   calls: number;
@@ -349,7 +351,11 @@ const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
         <h2>
           {model.connections.length > 0 ? `Add ${BRAND.name} to an agent` : `Step 2. Add ${BRAND.name} to an agent`}
         </h2>
-        <p class="muted">Paste this address into the agent. The agent opens {BRAND.name}, and you tap Allow.</p>
+        <p class="muted">
+          {model.noTap
+            ? `Paste this address into the agent. The agent opens ${BRAND.name} and gets your tools.`
+            : `Paste this address into the agent. The agent opens ${BRAND.name}, and you tap Allow.`}
+        </p>
       </div>
       <div class="address">
         <code data-copy-text>{model.mcpUrl}</code>
@@ -441,7 +447,11 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
       <section class="summary">
         <div class="summary-title">
           <h1>My tools</h1>
-          <p class="muted">Connect a tool one time. Approve each agent with one tap.</p>
+          <p class="muted">
+            {model.noTap
+              ? "Connect a tool one time. Each of your agents gets it."
+              : "Connect a tool one time. Approve each agent with one tap."}
+          </p>
         </div>
         <ul class="stats">
           <li>
