@@ -75,7 +75,8 @@ function cardFor(connector: Connector, availability: Availability, connections: 
   const match = connections.find((connection) =>
     source.kind === "mcp"
       ? connection.provider === connector.id
-      : connection.provider === source.provider && source.capabilities.some((c) => connection.capabilities.includes(c)),
+      : // A card for Gmail, Calendar and Drive is done only when the account gives all three.
+        connection.provider === source.provider && source.capabilities.every((c) => connection.capabilities.includes(c)),
   );
   if (match) return { connector, state: "connected", account: match.accountLabel };
   return { connector, state: availability, account: null };

@@ -188,3 +188,38 @@ describe("transport", () => {
     }
   });
 });
+
+describe("the Google card", () => {
+  test("shows + until the account gives Gmail, Calendar and Drive", async () => {
+    const { viewCatalog } = await import("../src/present.ts");
+    await browser.signIn(world, EMAIL);
+    const { deps } = world.gulpy;
+    const user = deps.store.userByEmail(EMAIL)!;
+    const now = deps.now();
+    const row = {
+      id: "conn_partial",
+      userId: user.id,
+      provider: "google",
+      accountId: "g1",
+      accountLabel: "me@gmail.com",
+      capabilities: ["email.read", "email.send", "files.read"] as const,
+      scopes: [],
+      accessTokenEnc: "x",
+      refreshTokenEnc: null,
+      expiresAt: null,
+      status: "active" as const,
+      tools: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    deps.store.insertConnection({ ...row, capabilities: [...row.capabilities] });
+    const card = () => viewCatalog(deps, user.id).flatMap((group) => group.cards).find((c) => c.connector.id === "google");
+    expect(card()?.state).not.toBe("connected");
+    deps.store.updateConnection(
+      "conn_partial",
+      { accountLabel: "me@gmail.com", capabilities: ["email.read", "email.send", "calendar.read", "calendar.write", "files.read"], scopes: [], accessTokenEnc: "x", refreshTokenEnc: null, expiresAt: null, status: "active" },
+      now,
+    );
+    expect(card()?.state).toBe("connected");
+  });
+});
