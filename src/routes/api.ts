@@ -199,6 +199,27 @@ export function apiRoutes(deps: Deps, gulpy: Gulpy): Hono {
     );
   });
 
+  // Files
+
+  api.get("/files", async (c) =>
+    c.json(
+      await gulpy.searchFiles(accessFrom(c), {
+        connectionId: c.req.query("connection_id"),
+        query: c.req.query("q"),
+        limit: c.req.query("limit"),
+      }),
+    ),
+  );
+
+  api.get("/files/:id", async (c) =>
+    c.json(
+      await gulpy.readFile(accessFrom(c), {
+        connectionId: c.req.query("connection_id"),
+        id: c.req.param("id"),
+      }),
+    ),
+  );
+
   // Proxy: a raw request to the provider API, limited by the permissions of the user
 
   api.all("/proxy/:connection/:service/*", async (c) => {

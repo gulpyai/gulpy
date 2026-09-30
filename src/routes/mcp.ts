@@ -152,6 +152,49 @@ function ownTools(gulpy: Gulpy): OwnTool[] {
       run: (access, args) =>
         gulpy.createEvent(access, { connectionId: optional(args.connection_id), event: parseNewEvent(args) }),
     },
+    {
+      needs: "files.read",
+      tool: {
+        name: "files_search",
+        title: "Search files",
+        description:
+          "Searches the files of the user in Google Drive and OneDrive by name and content. Returns names and ids. Use files_read for the text.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: text("Search words. Omit to get recent files."),
+            limit,
+            connection_id: connectionId,
+          },
+        },
+        annotations: { readOnlyHint: true },
+      },
+      run: (access, args) =>
+        gulpy.searchFiles(access, {
+          connectionId: optional(args.connection_id),
+          query: optional(args.query),
+          limit: args.limit,
+        }),
+    },
+    {
+      needs: "files.read",
+      tool: {
+        name: "files_read",
+        title: "Read one file",
+        description:
+          "Gets the text of one file. Google Docs, Sheets (first sheet, as CSV), Slides and text files have text. For other types, text is null and the result has a link.",
+        inputSchema: {
+          type: "object",
+          properties: { id: text("File id from files_search"), connection_id: connectionId },
+          required: ["id"],
+        },
+        annotations: { readOnlyHint: true },
+      },
+      run: (access, args) => {
+        if (typeof args.id !== "string") throw new ApiError(400, "invalid_request", '"id" is required');
+        return gulpy.readFile(access, { connectionId: optional(args.connection_id), id: args.id });
+      },
+    },
   ];
 }
 

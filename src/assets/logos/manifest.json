@@ -79,6 +79,11 @@
     "kind": "mark",
     "source": "https://www.gstatic.com/images/branding/productlogos/calendar_2026/v1/web-96dp/logo_calendar_2026_color_2x_web_96dp.png"
   },
+  "google-drive": {
+    "file": "google-drive.png",
+    "kind": "mark",
+    "source": "https://www.gstatic.com/images/branding/productlogos/drive_2026/v1/web-96dp/logo_drive_2026_color_2x_web_96dp.png"
+  },
   "granola": {
     "file": "granola.png",
     "kind": "fill",
@@ -143,6 +148,11 @@
     "file": "notion.png",
     "kind": "mark",
     "source": "https://www.notion.com/front-static/logo-ios.png"
+  },
+  "onedrive": {
+    "file": "onedrive.png",
+    "kind": "mark",
+    "source": "https://res-1.cdn.office.net/files/fabric-cdn-prod_20221209.001/assets/brand-icons/product/png/onedrive_96x2.png"
   },
   "outlook-calendar": {
     "file": "outlook-calendar.png",

@@ -13,7 +13,10 @@ const Card: FC<{ card: CatalogCard; next: string }> = ({ card, next }) => {
     <>
       <ConnectorIcon logo={connector} />
       <span class="card-text">
-        <strong>{connector.name}</strong>
+        <strong>
+          {connector.name}
+          {connector.beta && <span class="chip chip-beta">Beta</span>}
+        </strong>
         <span>{state === "connected" && account ? account : connector.description}</span>
       </span>
     </>

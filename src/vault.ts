@@ -76,6 +76,12 @@ export function bearerFetch(deps: Deps, token: string, url: string | URL, init: 
   return deps.fetch(url, { ...init, headers, redirect: "manual" });
 }
 
+/** A GET with no token. The provider signs the address, so the token must not go to that host. */
+export async function plainDownload(deps: Deps, url: string): Promise<Response> {
+  if (!url.startsWith("https://")) throw new ProviderError("download", 400, "The download address is not https");
+  return deps.fetch(url, { redirect: "follow" });
+}
+
 async function readJson<T>(client: { id: string; name: string }, response: Response): Promise<T> {
   if (!response.ok) {
     throw new ProviderError(client.id, response.status, `${client.name} returned HTTP ${response.status}`);
@@ -86,7 +92,11 @@ async function readJson<T>(client: { id: string; name: string }, response: Respo
 /** API client for a token that is not in the vault yet. Used during the OAuth callback. */
 export function tokenApi(deps: Deps, provider: { id: string; name: string }, token: string): ProviderApi {
   const call = (url: string, init?: RequestInit) => bearerFetch(deps, token, url, init);
-  return { fetch: call, json: async <T>(url: string, init?: RequestInit) => readJson<T>(provider, await call(url, init)) };
+  return {
+    fetch: call,
+    json: async <T>(url: string, init?: RequestInit) => readJson<T>(provider, await call(url, init)),
+    download: (url: string) => plainDownload(deps, url),
+  };
 }
 
 /**
@@ -166,7 +176,11 @@ export class Vault {
   /** API client for a stored connection. */
   api(connection: Connection, client: TokenClient): ProviderApi {
     const call = this.fetcher(connection, client);
-    return { fetch: call, json: async <T>(url: string, init?: RequestInit) => readJson<T>(client, await call(url, init)) };
+    return {
+      fetch: call,
+      json: async <T>(url: string, init?: RequestInit) => readJson<T>(client, await call(url, init)),
+      download: (url: string) => plainDownload(this.deps, url),
+    };
   }
 
   /** Tells the provider to cancel the tokens. Best effort: a failure does not stop the delete. */

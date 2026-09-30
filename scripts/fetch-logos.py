@@ -48,6 +48,8 @@ SITES: dict[str, str] = {
     "google-calendar": "https://calendar.google.com",
     "outlook-email": "https://outlook.live.com",
     "outlook-calendar": "https://outlook.live.com",
+    "google-drive": "https://drive.google.com",
+    "onedrive": "https://onedrive.live.com",
     "notion": "https://www.notion.com",
     "linear": "https://linear.app",
     "atlassian": "https://www.atlassian.com",
@@ -103,6 +105,13 @@ PINNED: dict[str, list[str]] = {
     ],
     "google-calendar": [
         "https://www.gstatic.com/images/branding/productlogos/calendar_2026/v1/web-96dp/logo_calendar_2026_color_2x_web_96dp.png",
+    ],
+    "google-drive": [
+        "https://www.gstatic.com/images/branding/productlogos/drive_2026/v1/web-96dp/logo_drive_2026_color_2x_web_96dp.png",
+        "https://www.gstatic.com/images/branding/productlogos/drive_2020q4/v8/web-96dp/logo_drive_2020q4_color_2x_web_96dp.png",
+    ],
+    "onedrive": [
+        "https://res-1.cdn.office.net/files/fabric-cdn-prod_20221209.001/assets/brand-icons/product/png/onedrive_96x2.png",
     ],
     "asana": [
         "https://brand.asana.biz/image/upload/f_auto:image,fl_preserve_transparency/v1696462483/asana_favicon_180x180.png",

@@ -8,6 +8,7 @@ import {
   siGithub,
   siGmail,
   siGooglecalendar,
+  siGoogledrive,
   siHubspot,
   siIntercom,
   siLinear,
@@ -57,6 +58,8 @@ export interface Connector {
   image?: LogoImage;
   /** SVG path in a 24 x 24 box. If there is none, the page shows the first letter. */
   icon?: string;
+  /** The page shows "Beta": the connector works, but it did not run with many real accounts yet. */
+  beta?: boolean;
   source: ConnectorSource;
 }
 
@@ -78,6 +81,7 @@ function mcp(
   return { id, name, description, category, ...branded, image: logoImage(id), source: { kind: "mcp", url, registration } };
 }
 
+/** Gulpy supplies the tools of these connectors. They are in beta until they run with more real accounts. */
 function native(
   id: string,
   name: string,
@@ -88,7 +92,16 @@ function native(
   category: Category = "Work",
 ): Connector {
   const branded = typeof brand === "string" ? { color: brand } : { color: brand.hex, icon: brand.path };
-  return { id, name, description, category, ...branded, image: logoImage(id), source: { kind: "native", provider, capabilities } };
+  return {
+    id,
+    name,
+    description,
+    category,
+    ...branded,
+    image: logoImage(id),
+    beta: true,
+    source: { kind: "native", provider, capabilities },
+  };
 }
 
 /**
@@ -98,8 +111,10 @@ function native(
 const CONNECTORS: Connector[] = [
   native("gmail", "Gmail", "Read and send email", "google", ["email.read", "email.send"], siGmail),
   native("google-calendar", "Google Calendar", "See and change events", "google", ["calendar.read", "calendar.write"], siGooglecalendar),
+  native("google-drive", "Google Drive", "Files, Docs and Sheets", "google", ["files.read"], siGoogledrive),
   native("outlook-email", "Outlook Email", "Read and send email", "microsoft", ["email.read", "email.send"], "0F6CBD"),
   native("outlook-calendar", "Outlook Calendar", "See and change events", "microsoft", ["calendar.read", "calendar.write"], "0F6CBD"),
+  native("onedrive", "OneDrive", "Search and read files", "microsoft", ["files.read"], "0078D4"),
 
   mcp("notion", "Notion", "Pages, wikis and databases", "Work", "https://mcp.notion.com/mcp", siNotion),
   mcp("linear", "Linear", "Issues, projects and cycles", "Work", "https://mcp.linear.app/mcp", siLinear),

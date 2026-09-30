@@ -25,7 +25,7 @@ interface Call {
   body: any;
 }
 
-/** A provider API that answers from a list of canned replies. */
+/** A provider API that answers from a list of canned replies. A reply that is a Response goes back as it is. */
 function fakeApi(replies: Record<string, unknown>): { api: ProviderApi; calls: Call[] } {
   const calls: Call[] = [];
   const call = async (url: string, init: RequestInit = {}): Promise<Response> => {
@@ -40,12 +40,15 @@ function fakeApi(replies: Record<string, unknown>): { api: ProviderApi; calls: C
     const key = `${method} ${parsed.origin}${parsed.pathname}`;
     if (!(key in replies)) return new Response("{}", { status: 404 });
     const reply = replies[key];
+    if (reply instanceof Response) return reply;
     return reply === null ? new Response(null, { status: 202 }) : Response.json(reply);
   };
   return {
     calls,
     api: {
       fetch: call,
+      // Marks the call, so that a test can check that no token went with it.
+      download: (url: string) => call(url, { headers: { "x-download": "no-token" } }),
       async json<T>(url: string, init?: RequestInit) {
         const response = await call(url, init);
         if (!response.ok) throw new ProviderError("test", response.status, "failed");
@@ -230,6 +233,84 @@ describe("Google", () => {
     });
   });
 
+
+  test("asks for read-only Drive access for files", () => {
+    expect(scopesFor(google, ["files.read"])).toContain("https://www.googleapis.com/auth/drive.readonly");
+    expect(capabilitiesFor(google, ["https://www.googleapis.com/auth/drive"])).toEqual(["files.read"]);
+  });
+
+  test("searches files. A search has no order, and quotes in the words are escaped", async () => {
+    const replies = {
+      "GET https://www.googleapis.com/drive/v3/files": {
+        files: [
+          {
+            id: "d1",
+            name: "Q4 plan",
+            mimeType: "application/vnd.google-apps.document",
+            modifiedTime: "2026-09-27T12:00:00.000Z",
+            webViewLink: "https://docs.google.com/document/d/d1",
+          },
+          { id: "d2", name: "notes.txt", mimeType: "text/plain", size: "42", modifiedTime: "2026-09-26T12:00:00.000Z" },
+        ],
+      },
+    };
+    const search = fakeApi(replies);
+    const files = await google.unified.searchFiles!(search.api, { query: "Dana's plan", limit: 5 });
+    expect(files).toEqual([
+      {
+        id: "d1",
+        name: "Q4 plan",
+        mime_type: "application/vnd.google-apps.document",
+        size: null,
+        modified: "2026-09-27T12:00:00.000Z",
+        link: "https://docs.google.com/document/d/d1",
+      },
+      { id: "d2", name: "notes.txt", mime_type: "text/plain", size: 42, modified: "2026-09-26T12:00:00.000Z", link: null },
+    ]);
+    const query = search.calls[0]?.url.searchParams;
+    expect(query?.get("q")).toBe(
+      "trashed = false and mimeType != 'application/vnd.google-apps.folder' and fullText contains 'Dana\\'s plan'",
+    );
+    expect(query?.has("orderBy")).toBe(false);
+    expect(query?.get("pageSize")).toBe("5");
+
+    const recent = fakeApi(replies);
+    await google.unified.searchFiles!(recent.api, { limit: 5 });
+    expect(recent.calls[0]?.url.searchParams.get("orderBy")).toBe("modifiedTime desc");
+  });
+
+  test("reads a Google Doc as exported text, and a text file as it is", async () => {
+    const doc = fakeApi({
+      "GET https://www.googleapis.com/drive/v3/files/d1": { id: "d1", name: "Q4 plan", mimeType: "application/vnd.google-apps.document" },
+      "GET https://www.googleapis.com/drive/v3/files/d1/export": new Response("The plan for Q4."),
+    });
+    expect(await google.unified.readFile!(doc.api, "d1")).toMatchObject({ name: "Q4 plan", text: "The plan for Q4.", truncated: false });
+    expect(doc.calls[1]?.url.searchParams.get("mimeType")).toBe("text/plain");
+
+    const sheet = fakeApi({
+      "GET https://www.googleapis.com/drive/v3/files/s1": { id: "s1", mimeType: "application/vnd.google-apps.spreadsheet" },
+      "GET https://www.googleapis.com/drive/v3/files/s1/export": new Response("a,b\n1,2"),
+    });
+    expect((await google.unified.readFile!(sheet.api, "s1")).text).toBe("a,b\n1,2");
+    expect(sheet.calls[1]?.url.searchParams.get("mimeType")).toBe("text/csv");
+
+    const text = fakeApi({ "GET https://www.googleapis.com/drive/v3/files/t1": new Response("x".repeat(250_000)) });
+    // The first call gets the metadata. The fake gives the same path both times, so give the metadata first.
+    text.api.json = async <T>() => ({ id: "t1", name: "log.txt", mimeType: "text/plain" }) as T;
+    const read = await google.unified.readFile!(text.api, "t1");
+    expect(read.text?.length).toBe(200_000);
+    expect(read.truncated).toBe(true);
+    expect(text.calls[0]?.url.searchParams.get("alt")).toBe("media");
+  });
+
+  test("gives no text for a file type that it cannot read", async () => {
+    const { api, calls } = fakeApi({
+      "GET https://www.googleapis.com/drive/v3/files/p1": { id: "p1", name: "photo.jpg", mimeType: "image/jpeg" },
+    });
+    expect(await google.unified.readFile!(api, "p1")).toMatchObject({ name: "photo.jpg", text: null, truncated: false });
+    expect(calls).toHaveLength(1);
+  });
+
   test("proxy rules", () => {
     const read: CapabilityId[] = ["email.read", "calendar.read"];
     expect(allowed(google, read, "gmail", "GET", "/gmail/v1/users/me/messages")).toBe(true);
@@ -248,6 +329,9 @@ describe("Google", () => {
     expect(allowed(google, ["email.send"], "gmail", "POST", "/gmail/v1/users/me/messages/send")).toBe(true);
     expect(allowed(google, ["email.send"], "gmail", "GET", "/gmail/v1/users/me/messages")).toBe(false);
     expect(allowed(google, ["calendar.write"], "calendar", "PATCH", "/calendar/v3/calendars/primary/events/e1")).toBe(true);
+    expect(allowed(google, ["files.read"], "drive", "GET", "/drive/v3/files/d1/export")).toBe(true);
+    expect(allowed(google, ["files.read"], "drive", "DELETE", "/drive/v3/files/d1")).toBe(false);
+    expect(allowed(google, ["files.read"], "drive", "GET", "/drive/v3/files/d1/permissions")).toBe(false);
   });
 });
 
@@ -412,6 +496,63 @@ describe("Microsoft", () => {
     });
   });
 
+
+  test("searches OneDrive and leaves out folders", async () => {
+    const replies = {
+      "GET https://graph.microsoft.com/v1.0/me/drive/root/search(q='Dana''s%20plan')": {
+        value: [
+          { id: "f1", name: "Plan.docx", file: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, size: 900, lastModifiedDateTime: "2026-09-27T12:00:00Z", webUrl: "https://onedrive.live.com/f1" },
+          { id: "f2", name: "Plans", folder: { childCount: 2 } },
+        ],
+      },
+      "GET https://graph.microsoft.com/v1.0/me/drive/root/children": { value: [] },
+    };
+    const search = fakeApi(replies);
+    expect(await microsoft.unified.searchFiles!(search.api, { query: "Dana's plan", limit: 5 })).toEqual([
+      {
+        id: "f1",
+        name: "Plan.docx",
+        mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        size: 900,
+        modified: "2026-09-27T12:00:00Z",
+        link: "https://onedrive.live.com/f1",
+      },
+    ]);
+    expect(search.calls[0]?.url.searchParams.has("$orderby")).toBe(false);
+
+    const recent = fakeApi(replies);
+    await microsoft.unified.searchFiles!(recent.api, { limit: 5 });
+    expect(recent.calls[0]?.url.pathname).toBe("/v1.0/me/drive/root/children");
+    expect(recent.calls[0]?.url.searchParams.get("$orderby")).toBe("lastModifiedDateTime desc");
+  });
+
+  test("reads a text file from the signed address, with no token", async () => {
+    const { api, calls } = fakeApi({
+      "GET https://graph.microsoft.com/v1.0/me/drive/items/f3": {
+        id: "f3",
+        name: "notes.md",
+        file: { mimeType: "text/markdown" },
+        "@microsoft.graph.downloadUrl": "https://public.am.files.1drv.com/y4m-signed",
+      },
+      "GET https://public.am.files.1drv.com/y4m-signed": new Response("# Notes"),
+    });
+    expect(await microsoft.unified.readFile!(api, "f3")).toMatchObject({ name: "notes.md", text: "# Notes", truncated: false });
+    expect(calls[1]?.headers.get("x-download")).toBe("no-token");
+  });
+
+  test("gives no text for a Word file", async () => {
+    const { api, calls } = fakeApi({
+      "GET https://graph.microsoft.com/v1.0/me/drive/items/f1": {
+        id: "f1",
+        name: "Plan.docx",
+        file: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+        "@microsoft.graph.downloadUrl": "https://public.am.files.1drv.com/y4m-signed",
+      },
+    });
+    expect(await microsoft.unified.readFile!(api, "f1")).toMatchObject({ text: null });
+    expect(calls).toHaveLength(1);
+  });
+
   test("proxy rules", () => {
     const read: CapabilityId[] = ["email.read", "calendar.read"];
     expect(allowed(microsoft, read, "graph", "GET", "/v1.0/me/messages")).toBe(true);
@@ -427,5 +568,9 @@ describe("Microsoft", () => {
 
     expect(allowed(microsoft, ["email.send"], "graph", "POST", "/v1.0/me/sendMail")).toBe(true);
     expect(allowed(microsoft, ["calendar.write"], "graph", "PATCH", "/v1.0/me/events/ev1")).toBe(true);
+    expect(allowed(microsoft, ["files.read"], "graph", "GET", "/v1.0/me/drive/root/children")).toBe(true);
+    expect(allowed(microsoft, ["files.read"], "graph", "GET", "/v1.0/me/drive/items/f1")).toBe(true);
+    expect(allowed(microsoft, ["files.read"], "graph", "DELETE", "/v1.0/me/drive/items/f1")).toBe(false);
+    expect(allowed(microsoft, ["files.read"], "graph", "GET", "/v1.0/me/drive/items/f1/permissions")).toBe(false);
   });
 });

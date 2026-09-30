@@ -1,10 +1,30 @@
 import type { ProviderCredentials } from "../config.ts";
 import { buildMimeMessage, htmlToText } from "./mime.ts";
-import type { CalendarEvent, EmailMessage, EmailSummary, Provider, ProviderApi } from "./types.ts";
+import {
+  isTextType,
+  readText,
+  ProviderError,
+  type CalendarEvent,
+  type EmailMessage,
+  type EmailSummary,
+  type FileContent,
+  type FileSummary,
+  type Provider,
+  type ProviderApi,
+} from "./types.ts";
 
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";
+const DRIVE = "https://www.googleapis.com/drive/v3";
 const SCOPE = "https://www.googleapis.com/auth";
+const FILE_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink";
+
+/** Google Docs, Sheets and Slides have no file. Drive exports them as text. Sheets gives the first sheet only. */
+const EXPORTS: Record<string, string> = {
+  "application/vnd.google-apps.document": "text/plain",
+  "application/vnd.google-apps.spreadsheet": "text/csv",
+  "application/vnd.google-apps.presentation": "text/plain",
+};
 
 interface GmailHeader {
   name: string;
@@ -36,6 +56,31 @@ interface GoogleEvent {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: { email?: string }[];
+}
+
+interface DriveFile {
+  id: string;
+  name?: string;
+  mimeType?: string;
+  size?: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+}
+
+function toFile(file: DriveFile): FileSummary {
+  return {
+    id: file.id,
+    name: file.name ?? "",
+    mime_type: file.mimeType ?? null,
+    size: file.size === undefined ? null : Number(file.size),
+    modified: file.modifiedTime ?? "",
+    link: file.webViewLink ?? null,
+  };
+}
+
+/** A value inside single quotes in a Drive query. */
+function driveLiteral(value: string): string {
+  return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
 function header(message: GmailMessage, name: string): string {
@@ -123,6 +168,7 @@ export function googleProvider(credentials: ProviderCredentials): Provider {
         anyOf: [`${SCOPE}/calendar.events.readonly`, `${SCOPE}/calendar.readonly`, `${SCOPE}/calendar.events`, `${SCOPE}/calendar`],
       },
       "calendar.write": { request: [`${SCOPE}/calendar.events`], anyOf: [`${SCOPE}/calendar.events`, `${SCOPE}/calendar`] },
+      "files.read": { request: [`${SCOPE}/drive.readonly`], anyOf: [`${SCOPE}/drive.readonly`, `${SCOPE}/drive`] },
     },
     // `prompt=consent` makes Google return a refresh token on each connect.
     authorizeParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
@@ -148,6 +194,10 @@ export function googleProvider(credentials: ProviderCredentials): Provider {
           { capability: "calendar.read", methods: ["GET"], path: /^\/calendar\/v3\/calendars\/[^/]+\/events(\/[^/]+)?$/ },
           { capability: "calendar.write", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], path: /^\/calendar\/v3\/calendars\/[^/]+\/events(\/[^/]+)?$/ },
         ],
+      },
+      drive: {
+        baseUrl: "https://www.googleapis.com",
+        rules: [{ capability: "files.read", methods: ["GET"], path: /^\/drive\/v3\/files(\/[\w-]+(\/export)?)?$/ }],
       },
     },
 
@@ -201,6 +251,35 @@ export function googleProvider(credentials: ProviderCredentials): Provider {
           }),
         });
         return toEvent(created);
+      },
+
+      async searchFiles(api, { query, limit }) {
+        const url = new URL(`${DRIVE}/files`);
+        const terms = ["trashed = false", "mimeType != 'application/vnd.google-apps.folder'"];
+        // Drive does not sort a full-text search. It gives the best matches first.
+        if (query) terms.push(`fullText contains ${driveLiteral(query)}`);
+        else url.searchParams.set("orderBy", "modifiedTime desc");
+        url.searchParams.set("q", terms.join(" and "));
+        url.searchParams.set("pageSize", String(limit));
+        url.searchParams.set("fields", `files(${FILE_FIELDS})`);
+        url.searchParams.set("includeItemsFromAllDrives", "true");
+        url.searchParams.set("supportsAllDrives", "true");
+        const list = await api.json<{ files?: DriveFile[] }>(url.toString());
+        return (list.files ?? []).map(toFile);
+      },
+
+      async readFile(api, id): Promise<FileContent> {
+        const base = `${DRIVE}/files/${encodeURIComponent(id)}`;
+        const file = toFile(await api.json<DriveFile>(`${base}?fields=${FILE_FIELDS}&supportsAllDrives=true`));
+        const exportType = file.mime_type ? EXPORTS[file.mime_type] : undefined;
+        let url: string;
+        if (exportType) url = `${base}/export?mimeType=${encodeURIComponent(exportType)}`;
+        else if (isTextType(file.mime_type)) url = `${base}?alt=media&supportsAllDrives=true`;
+        else return { ...file, text: null, truncated: false };
+
+        const response = await api.fetch(url, { headers: { accept: "*/*" } });
+        if (!response.ok) throw new ProviderError("google", response.status, "Google did not give the file");
+        return { ...file, ...(await readText(response)) };
       },
     },
   };

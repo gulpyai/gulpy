@@ -44,6 +44,14 @@ export function viewConnection(deps: Deps, connection: Connection): ConnectionVi
   };
 }
 
+/** "Gmail, Google Calendar and Google Drive". */
+export function connectorNames(view: ConnectionView): string {
+  const names = view.connectors.map((connector) => connector.name);
+  if (names.length === 0) return view.name;
+  if (names.length === 1) return names[0] ?? view.name;
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
 export function viewConnections(deps: Deps, userId: string): ConnectionView[] {
   return deps.store.connectionsByUser(userId).flatMap((connection) => viewConnection(deps, connection) ?? []);
 }

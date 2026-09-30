@@ -11,6 +11,8 @@ import {
   type CalendarEvent,
   type EmailMessage,
   type EmailSummary,
+  type FileContent,
+  type FileSummary,
   type NewEmail,
   type NewEvent,
   type Provider,
@@ -300,6 +302,32 @@ export class Gulpy {
     return this.one(access, "calendar.write", target, (native) =>
       native.provider.unified.createEvent(this.api(native), event),
     );
+  }
+
+  async searchFiles(
+    access: Access,
+    input: { connectionId?: string; query?: string; limit?: unknown },
+  ): Promise<{ files: Tagged<FileSummary>[]; errors: PartialFailure[] }> {
+    const limit = clampLimit(input.limit);
+    const targets = this.candidates(access, "files.read", input.connectionId);
+    if (targets.length === 0) throw new ApiError(403, "not_granted", 'The user did not give "files.read"');
+    const { items, errors } = await this.fanOut(access, "files.read", targets, (target) => {
+      const search = target.provider.unified.searchFiles;
+      if (!search) throw new ApiError(400, "not_supported", `${target.provider.name} has no files`);
+      return search(this.api(target), { query: input.query, limit });
+    });
+    // With search words, keep the order of each provider: best match first.
+    if (!input.query) items.sort((a, b) => b.modified.localeCompare(a.modified));
+    return { files: items.slice(0, limit), errors };
+  }
+
+  readFile(access: Access, input: { connectionId?: string; id: string }): Promise<Tagged<FileContent>> {
+    const target = this.single(access, "files.read", input.connectionId);
+    return this.one(access, "files.read", target, (native) => {
+      const read = native.provider.unified.readFile;
+      if (!read) throw new ApiError(400, "not_supported", `${native.provider.name} has no files`);
+      return read(this.api(native), input.id);
+    });
   }
 
   /**

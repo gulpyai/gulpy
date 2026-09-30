@@ -1,10 +1,20 @@
 import type { ProviderCredentials } from "../config.ts";
 import { isEmailAddress } from "./mime.ts";
-import { InputError, ProviderError, type CalendarEvent, type EmailSummary, type Provider } from "./types.ts";
+import {
+  InputError,
+  isTextType,
+  ProviderError,
+  readText,
+  type CalendarEvent,
+  type EmailSummary,
+  type FileSummary,
+  type Provider,
+} from "./types.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 const MESSAGE_FIELDS = "id,conversationId,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead";
 const EVENT_FIELDS = "id,subject,start,end,isAllDay,location,attendees,bodyPreview,webLink";
+const FILE_FIELDS = "id,name,file,folder,size,lastModifiedDateTime,webUrl";
 
 interface GraphAddress {
   emailAddress?: { name?: string; address?: string };
@@ -32,6 +42,28 @@ interface GraphEvent {
   attendees?: GraphAddress[];
   bodyPreview?: string;
   webLink?: string;
+}
+
+interface GraphDriveItem {
+  id: string;
+  name?: string;
+  file?: { mimeType?: string };
+  folder?: unknown;
+  size?: number;
+  lastModifiedDateTime?: string;
+  webUrl?: string;
+  "@microsoft.graph.downloadUrl"?: string;
+}
+
+function toFile(item: GraphDriveItem): FileSummary {
+  return {
+    id: item.id,
+    name: item.name ?? "",
+    mime_type: item.file?.mimeType ?? null,
+    size: item.size ?? null,
+    modified: item.lastModifiedDateTime ?? "",
+    link: item.webUrl ?? null,
+  };
 }
 
 function display(address: GraphAddress | undefined): string {
@@ -100,6 +132,7 @@ export function microsoftProvider(credentials: ProviderCredentials): Provider {
       "email.send": { request: ["Mail.Send"] },
       "calendar.read": { request: ["Calendars.Read"], anyOf: ["Calendars.Read", "Calendars.ReadWrite"] },
       "calendar.write": { request: ["Calendars.ReadWrite"] },
+      "files.read": { request: ["Files.Read"], anyOf: ["Files.Read", "Files.ReadWrite", "Files.Read.All", "Files.ReadWrite.All"] },
     },
     authorizeParams: { prompt: "select_account" },
     loginHintParam: "login_hint",
@@ -120,6 +153,7 @@ export function microsoftProvider(credentials: ProviderCredentials): Provider {
           { capability: "email.send", methods: ["POST"], path: /^\/v1\.0\/me\/sendMail$/ },
           { capability: "calendar.read", methods: ["GET"], path: /^\/v1\.0\/me\/(events|calendarView|calendars)(\/[^/]+)*$/ },
           { capability: "calendar.write", methods: ["GET", "POST", "PATCH", "DELETE"], path: /^\/v1\.0\/me\/events(\/[^/]+)?$/ },
+          { capability: "files.read", methods: ["GET"], path: /^\/v1\.0\/me\/drive\/(root(\/children|\/search\(q='[^/]*'\))?|items\/[^/]+(\/children)?)$/ },
         ],
       },
     },
@@ -190,6 +224,31 @@ export function microsoftProvider(credentials: ProviderCredentials): Provider {
           }),
         });
         return toEvent(created);
+      },
+
+      async searchFiles(api, { query, limit }) {
+        // Graph has no sorted list of all files. "recent" is deprecated. With no words, list the top folder.
+        const path = query
+          ? `${GRAPH}/me/drive/root/search(q='${encodeURIComponent(query.replace(/'/g, "''"))}')`
+          : `${GRAPH}/me/drive/root/children`;
+        const url = new URL(path);
+        url.searchParams.set("$top", String(limit));
+        url.searchParams.set("$select", FILE_FIELDS);
+        if (!query) url.searchParams.set("$orderby", "lastModifiedDateTime desc");
+        const list = await api.json<{ value?: GraphDriveItem[] }>(url.toString());
+        return (list.value ?? []).filter((item) => !item.folder).map(toFile);
+      },
+
+      async readFile(api, id) {
+        // No $select: Graph then includes the signed download address.
+        const item = await api.json<GraphDriveItem>(`${GRAPH}/me/drive/items/${encodeURIComponent(id)}`);
+        const file = toFile(item);
+        const download = item["@microsoft.graph.downloadUrl"];
+        // Graph cannot give Word, Excel or PowerPoint files as text.
+        if (!download || !isTextType(file.mime_type)) return { ...file, text: null, truncated: false };
+        const response = await api.download(download);
+        if (!response.ok) throw new ProviderError("microsoft", response.status, "Microsoft did not give the file");
+        return { ...file, ...(await readText(response)) };
       },
     },
   };

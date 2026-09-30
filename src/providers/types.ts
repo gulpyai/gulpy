@@ -45,6 +45,45 @@ export interface NewEvent {
   attendees?: string[];
 }
 
+export interface FileSummary {
+  id: string;
+  name: string;
+  mime_type: string | null;
+  /** Bytes. Null for a file that has no stored size, for example a Google Doc. */
+  size: number | null;
+  /** ISO 8601 */
+  modified: string;
+  link: string | null;
+}
+
+export interface FileContent extends FileSummary {
+  /** The text of the file. Null if Gulpy cannot read this type of file. */
+  text: string | null;
+  /** True if Gulpy cut the text at the size limit. */
+  truncated: boolean;
+}
+
+/** Gulpy reads the text of a file up to this size. */
+export const MAX_FILE_TEXT = 200_000;
+
+/** File types that Gulpy reads as text. */
+export function isTextType(mimeType: string | null | undefined): boolean {
+  if (!mimeType) return false;
+  return (
+    mimeType.startsWith("text/") ||
+    /^application\/(json|xml|javascript|x-yaml|yaml|csv|x-sh|sql|rtf)(;|$)/.test(mimeType) ||
+    /\+(json|xml)(;|$)/.test(mimeType)
+  );
+}
+
+/** Reads the text of a response, up to MAX_FILE_TEXT characters. */
+export async function readText(response: Response): Promise<{ text: string; truncated: boolean }> {
+  const text = await response.text();
+  return text.length > MAX_FILE_TEXT
+    ? { text: text.slice(0, MAX_FILE_TEXT), truncated: true }
+    : { text, truncated: false };
+}
+
 /** The provider returned an error. `status` is the HTTP status that the provider sent. */
 export class ProviderError extends Error {
   constructor(
@@ -70,6 +109,8 @@ export interface ProviderApi {
   fetch(url: string, init?: RequestInit): Promise<Response>;
   /** Throws ProviderError if the status is not 2xx. */
   json<T>(url: string, init?: RequestInit): Promise<T>;
+  /** A GET with no token, for a signed download address that the provider gave. Only `https`. */
+  download(url: string): Promise<Response>;
 }
 
 export interface UnifiedAdapter {
@@ -78,6 +119,9 @@ export interface UnifiedAdapter {
   sendMessage(api: ProviderApi, message: NewEmail): Promise<{ id: string | null }>;
   listEvents(api: ProviderApi, options: { from: string; to: string; limit: number }): Promise<CalendarEvent[]>;
   createEvent(api: ProviderApi, event: NewEvent): Promise<CalendarEvent>;
+  /** Files. Only a provider with the capability "files.read" has these. */
+  searchFiles?(api: ProviderApi, options: { query?: string; limit: number }): Promise<FileSummary[]>;
+  readFile?(api: ProviderApi, id: string): Promise<FileContent>;
 }
 
 export interface CapabilityScopes {

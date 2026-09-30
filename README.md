@@ -72,14 +72,14 @@ them, Gulpy must have a public `https` address. Set `GULPY_BASE_URL` to it.
 
 ## Real connectors
 
-The list has 36 real connectors. On 2026-09-27 each address answered with its
+The list has 38 real connectors. On 2026-09-29 each MCP address answered with its
 sign-in metadata.
 
 | Group | Count | What you must do |
 |---|---|---|
 | Register automatically | 25 | Nothing. Select **+**. Notion, Linear, Atlassian, Stripe, Vercel, Supabase, Canva, Higgsfield and others. |
 | Need an app that you register at the provider | 7 | GitHub, Slack, HubSpot, Asana, Box, Render, Figma. The list shows them as "Soon". |
-| Use the API of the provider, with Gulpy tools | 4 | Gmail, Google Calendar, Outlook Email, Outlook Calendar |
+| Use the API of the provider, with Gulpy tools (Beta) | 6 | Gmail, Google Calendar, Google Drive, Outlook Email, Outlook Calendar, OneDrive. Register one Google app and one Microsoft app (table below). |
 
 Check the list against the real servers:
 
@@ -94,8 +94,8 @@ in the macOS Keychain for development.
 | Connector | Environment | Redirect address to register |
 |---|---|---|
 | GitHub, Slack, HubSpot, Asana, Box, Render, Figma | `CONNECTOR_<NAME>_CLIENT_ID`, `CONNECTOR_<NAME>_CLIENT_SECRET` | `<base>/oauth/callback/mcp` |
-| Gmail, Google Calendar | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `<base>/oauth/callback/google` |
-| Outlook Email, Outlook Calendar | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | `<base>/oauth/callback/microsoft` |
+| Gmail, Google Calendar, Google Drive | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `<base>/oauth/callback/google` |
+| Outlook Email, Outlook Calendar, OneDrive | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | `<base>/oauth/callback/microsoft` |
 
 ```sh
 security add-generic-password -a "$USER" -s gulpy-connector-github-client-id -w "<client id>" -U
@@ -185,6 +185,7 @@ All paths start with `/v1`. Errors have the shape `{ "error": { "code", "message
 | `DELETE /connections/:id` | access token | The app gives up its access to one account. |
 | `GET /email/messages`, `GET /email/messages/:id`, `POST /email/messages` | access token | Mail |
 | `GET /calendar/events`, `POST /calendar/events` | access token | Calendar |
+| `GET /files?q=`, `GET /files/:id` | access token | Files in Google Drive and OneDrive: search, and read the text. Beta. |
 | `ANY /proxy/:connection_id/:service/*` | access token | A raw request to the provider API. Off by default. |
 
 | Error code | Status | Meaning |
@@ -269,7 +270,7 @@ test/               end-to-end tests. They use no network.
 ## Tests
 
 ```sh
-bun test          # 104 tests
+bun test          # 122 tests
 bun run typecheck
 ```
 
@@ -277,7 +278,7 @@ bun run typecheck
 
 Verified:
 
-- The full flow: 104 automated tests, and runs in a real browser (Chromium) with the
+- The full flow: 122 automated tests, and runs in a real browser (Chromium) with the
   pop-up window. The tests use a mail provider and connectors that exist for the tests only.
 - A real AI agent: Claude answered questions with tools that came through Gulpy.
 - The agent side, with the official MCP SDK as the agent: discovery, registration,
@@ -291,14 +292,16 @@ Not verified:
 - The container build from `Dockerfile`.
 - **The sign-in of a user at a real connector, and a tool call with a real account.**
   This needs your accounts. Select **+** on a tool to try it.
-- The Google and Microsoft adapters did not run against the real services.
+- The Google and Microsoft adapters did not run against the real services. They show **Beta**.
+- Google Drive and OneDrive give text for Google Docs, Sheets (first sheet), Slides and text files only.
+  Word, Excel, PowerPoint and PDF files give a link and no text.
 - ChatGPT, Claude and Grok as the agent. They need a public `https` address.
 - Mail to a real person. The `ResendMailer` sent one message to the test mailbox of Resend (HTTP 200).
 
 Not built yet:
 
-- The 11 tools that show "Soon": Gmail, Google Calendar, Outlook Email, Outlook Calendar,
-  GitHub, Slack, HubSpot, Asana, Box, Render, Figma. Each needs an app at the provider.
+- The Google and Microsoft apps. Without `GOOGLE_*` and `MICROSOFT_*`, their 6 tools show "Soon".
+- The 7 tools that show "Soon": GitHub, Slack, HubSpot, Asana, Box, Render, Figma. Each needs an app at the provider.
 - Skills and plugin packs. Gulpy has connectors only.
 - Connectors that use an API key and no OAuth, for example Exa and Firecrawl.
 - Passkeys for sign-in to Gulpy.

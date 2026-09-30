@@ -3,7 +3,7 @@ import type { Viewer } from "../auth.ts";
 import { BRAND } from "../brand.ts";
 import { agentLogo, logoImage } from "../logos.ts";
 import { levelOf, type CapabilityId } from "../capabilities.ts";
-import type { CatalogGroup, ConnectionView } from "../present.ts";
+import { connectorNames, type CatalogGroup, type ConnectionView } from "../present.ts";
 import type { App, AuditEntry } from "../store.ts";
 import { CatalogGrid } from "./catalog.tsx";
 import { SignInForm, type SignInState } from "./signin.tsx";
@@ -356,12 +356,15 @@ const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
 const ConnectionRow: FC<{ view: ConnectionView; viewer: Viewer }> = ({ view, viewer }) => {
   const { connection } = view;
   const reconnect = view.connectors[0]?.id ?? connection.provider;
-  const title = view.tools ? view.name : view.connectors.map((connector) => connector.name).join(" and ") || view.name;
+  const title = view.tools ? view.name : connectorNames(view);
   return (
     <li>
       <ConnectorIcon logo={view.logo} />
       <div class="row-text">
-        <strong>{title}</strong>
+        <strong>
+          {title}
+          {view.connectors.some((connector) => connector.beta) && <span class="chip chip-beta">Beta</span>}
+        </strong>
         <span>
           {connection.accountLabel}
           {view.tools ? ` · ${view.tools.total} tools` : ""}

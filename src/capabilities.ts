@@ -28,6 +28,12 @@ export const CAPABILITIES = {
     icon: "calendar-plus",
     write: true,
   },
+  "files.read": {
+    label: "See your files",
+    detail: "Search files and read their text. It cannot change or delete.",
+    icon: "file",
+    write: false,
+  },
   "tools.read": {
     label: "Look up information",
     detail: "Use the tools that only read data.",

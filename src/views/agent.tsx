@@ -3,7 +3,7 @@ import type { AuthorizeRequest } from "../agents.ts";
 import type { Viewer } from "../auth.ts";
 import { BRAND } from "../brand.ts";
 import { agentLogo } from "../logos.ts";
-import type { AgentChoice, CatalogGroup } from "../present.ts";
+import { connectorNames, type AgentChoice, type CatalogGroup } from "../present.ts";
 import type { App } from "../store.ts";
 import { CatalogGrid } from "./catalog.tsx";
 import { SignInForm, type SignInState } from "./signin.tsx";
@@ -68,7 +68,7 @@ export const AgentSignIn: FC<{ app: App; state: SignInState }> = ({ app, state }
 const Choice: FC<{ choice: AgentChoice; next: string }> = ({ choice, next }) => {
   const { view, usable, selected, level } = choice;
   const { connection } = view;
-  const names = view.connectors.map((connector) => connector.name).join(" and ") || view.name;
+  const names = connectorNames(view);
   const title = view.tools ? view.name : names;
   const detail = view.tools ? `${connection.accountLabel} · ${view.tools.total} tools` : connection.accountLabel;
   if (!usable) {

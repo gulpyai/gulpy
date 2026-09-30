@@ -89,6 +89,16 @@ const QUESTIONS: { q: string; a: Child }[] = [
     a: <>The provider of that tool must approve {BRAND.name} first. The tool becomes available after the approval.</>,
   },
   {
+    q: 'What does "Beta" mean?',
+    a: (
+      <>
+        {BRAND.name} supplies the tools for Gmail, Google Calendar, Google Drive, Outlook and OneDrive itself. They work,
+        but they did not run with many real accounts yet. Tell us if a tool does not work. During the beta, Google can show a
+        warning that it did not verify the app yet.
+      </>
+    ),
+  },
+  {
     q: "How do I delete my account?",
     a: (
       <>
@@ -271,7 +281,7 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
     <section class="info-section" id="google">
       <h2>Information from Google</h2>
       <p>
-        This applies to data from Google APIs, for example Gmail and Google Calendar. {BRAND.name} asks only for the
+        This applies to data from Google APIs, for example Gmail, Google Calendar and Google Drive. {BRAND.name} asks only for the
         permissions of the tools that you turn on.
       </p>
       <ul>
