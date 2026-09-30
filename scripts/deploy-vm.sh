@@ -68,6 +68,13 @@ remote "sudo install -d -m 700 /etc/gulpy && sudo install -d -m 755 /etc/gulpy/c
     value="$(optional "${pair#*:}")"
     if [[ -n "$value" ]]; then printf '%s=%s\n' "${pair%%:*}" "$value"; fi
   done
+  # OAuth apps registered at connectors that do not permit automatic registration (src/config.ts).
+  for id in github slack hubspot asana box render figma; do
+    for part in client-id client-secret; do
+      value="$(optional "gulpy-connector-$id-$part")"
+      if [[ -n "$value" ]]; then printf 'CONNECTOR_%s_%s=%s\n' "${(U)id}" "${(U)${part//-/_}}" "$value"; fi
+    done
+  done
 } | remote "sudo sh -c 'umask 077; cat > /etc/gulpy/env'"
 # The tunnel program in the container is user 65532.
 remote "sudo sh -c 'umask 077; cat > /etc/gulpy/cloudflared/creds.json; chown 65532:65532 /etc/gulpy/cloudflared/creds.json; chmod 400 /etc/gulpy/cloudflared/creds.json'" \
