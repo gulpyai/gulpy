@@ -7,6 +7,7 @@ import { ConsoleMailer } from "./mailer.ts";
 import { loadProviders } from "./providers/index.ts";
 import type { Provider } from "./providers/types.ts";
 import { apiRoutes } from "./routes/api.ts";
+import { Tools } from "./tools.ts";
 import { billingRoutes } from "./routes/billing.ts";
 import { infoRoutes } from "./routes/info.tsx";
 import { mcpRoutes } from "./routes/mcp.ts";
@@ -107,7 +108,7 @@ export async function createApp(deps: Deps): Promise<GulpyApp> {
   app.get("/health", (c) =>
     c.json({ ok: true, providers: [...deps.providers.keys()], connectors: deps.catalog.all().length }),
   );
-  app.route("/v1", apiRoutes(deps, gulpy));
+  app.route("/v1", apiRoutes(deps, gulpy, new Tools(gulpy)));
   app.route("/mcp", mcpRoutes(deps, gulpy));
   // Before the pages: agents call these endpoints from other origins, with no cookie. Stripe too.
   app.route("/", billingRoutes(deps));

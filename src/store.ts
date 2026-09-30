@@ -208,8 +208,36 @@ CREATE TABLE subscriptions (
 );
 `;
 
+/**
+ * "Connect to Gulpy": an agent asks for a code, the user signs in and allows it in the browser,
+ * and the agent then gets its key. RFC 8628 (device authorization grant).
+ */
+const SCHEMA_V7 = `
+CREATE TABLE device_codes (
+  device_hash TEXT PRIMARY KEY,
+  user_code TEXT NOT NULL UNIQUE,
+  app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  polled_at INTEGER
+);
+`;
+
 /** Each entry runs one time, in order. Add a new entry for each schema change. */
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6];
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7];
+
+export type DeviceStatus = "pending" | "approved" | "denied" | "used";
+
+export interface DeviceCode {
+  userCode: string;
+  appId: string;
+  userId: string | null;
+  status: DeviceStatus;
+  expiresAt: number;
+  polledAt: number | null;
+}
 
 export interface User {
   id: string;
@@ -669,6 +697,7 @@ export class Store {
       count += this.run("DELETE FROM sessions WHERE expires_at < ?", now);
       count += this.run("DELETE FROM oauth_states WHERE expires_at < ?", now - day);
       count += this.run("DELETE FROM auth_codes WHERE expires_at < ?", now - day);
+      count += this.run("DELETE FROM device_codes WHERE expires_at < ?", now - day);
       count += this.run("DELETE FROM public_tokens WHERE expires_at < ?", now - day);
       count += this.run("DELETE FROM link_sessions WHERE expires_at < ?", now - month);
       count += this.run(
@@ -1008,10 +1037,13 @@ export class Store {
          EXISTS (SELECT 1 FROM grants g WHERE g.app_id = a.id AND g.user_id = ?)
          OR EXISTS (SELECT 1 FROM refresh_tokens t WHERE t.app_id = a.id AND t.user_id = ?
                     AND t.revoked_at IS NULL AND t.used_at IS NULL AND t.expires_at > ?)
+         OR EXISTS (SELECT 1 FROM access_tokens k WHERE k.app_id = a.id AND k.user_id = ?
+                    AND k.revoked_at IS NULL AND k.expires_at IS NULL)
        ) ORDER BY a.created_at, a.id`,
       userId,
       userId,
       now,
+      userId,
     ).map((row) => String(row.id));
   }
 
@@ -1179,6 +1211,61 @@ export class Store {
       now,
       expiresAt,
     );
+  }
+
+  createDeviceCode(deviceHash: string, userCode: string, appId: string, now: number, expiresAt: number): void {
+    this.run(
+      "INSERT INTO device_codes (device_hash, user_code, app_id, status, created_at, expires_at) VALUES (?, ?, ?, 'pending', ?, ?)",
+      deviceHash,
+      userCode,
+      appId,
+      now,
+      expiresAt,
+    );
+  }
+
+  private deviceRow(row: Record<string, unknown> | null): DeviceCode | null {
+    if (!row) return null;
+    return {
+      userCode: String(row.user_code),
+      appId: String(row.app_id),
+      userId: row.user_id === null ? null : String(row.user_id),
+      status: String(row.status) as DeviceStatus,
+      expiresAt: Number(row.expires_at),
+      polledAt: row.polled_at === null ? null : Number(row.polled_at),
+    };
+  }
+
+  /** A code that waits for the user, by the code that the user sees. */
+  pendingDeviceCode(userCode: string, now: number): DeviceCode | null {
+    return this.deviceRow(
+      this.one("SELECT * FROM device_codes WHERE user_code = ? AND status = 'pending' AND expires_at > ?", userCode, now),
+    );
+  }
+
+  /** The user allows or refuses the agent. Only a pending code changes. */
+  decideDeviceCode(userCode: string, userId: string, status: "approved" | "denied", now: number): boolean {
+    return (
+      this.run(
+        "UPDATE device_codes SET status = ?, user_id = ? WHERE user_code = ? AND status = 'pending' AND expires_at > ?",
+        status,
+        userId,
+        userCode,
+        now,
+      ) > 0
+    );
+  }
+
+  /** The agent asks again. Returns the code as it was before this poll, and records the time of the poll. */
+  pollDeviceCode(deviceHash: string, now: number): DeviceCode | null {
+    const before = this.deviceRow(this.one("SELECT * FROM device_codes WHERE device_hash = ?", deviceHash));
+    if (before) this.run("UPDATE device_codes SET polled_at = ? WHERE device_hash = ?", now, deviceHash);
+    return before;
+  }
+
+  /** An approved code gives one key only. */
+  useDeviceCode(deviceHash: string): boolean {
+    return this.run("UPDATE device_codes SET status = 'used' WHERE device_hash = ? AND status = 'approved'", deviceHash) > 0;
   }
 
   /** Marks the code as used and returns it. A code works one time only. */

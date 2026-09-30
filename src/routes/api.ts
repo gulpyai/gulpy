@@ -1,10 +1,12 @@
 import { Hono, type Context } from "hono";
+import { cors } from "hono/cors";
 import { ApiError, appUserId, authenticateApp, authenticateToken, type Access } from "../access.ts";
 import type { Deps } from "../deps.ts";
 import { createLinkToken, exchangePublicToken } from "../link.ts";
 import type { NewEmail, NewEvent } from "../providers/types.ts";
 import type { Gulpy } from "../service.ts";
 import type { App } from "../store.ts";
+import type { Tools } from "../tools.ts";
 
 type Json = Record<string, unknown>;
 
@@ -62,8 +64,11 @@ export function parseNewEvent(body: Json): NewEvent {
   };
 }
 
-export function apiRoutes(deps: Deps, gulpy: Gulpy): Hono {
+export function apiRoutes(deps: Deps, gulpy: Gulpy, tools: Tools): Hono {
   const api = new Hono();
+
+  // An agent that runs in a browser calls the tools from its own origin. It sends a key, not a cookie.
+  for (const path of ["/tools", "/tools/*"]) api.use(path, cors({ origin: "*", allowHeaders: ["authorization", "content-type"] }));
 
   api.use("*", async (c, next) => {
     await next();
@@ -106,6 +111,16 @@ export function apiRoutes(deps: Deps, gulpy: Gulpy): Hono {
     }
     return access;
   };
+
+  // Tools: the main API for agents. See /agents.md.
+
+  api.get("/tools", async (c) => c.json({ tools: await tools.list(accessFrom(c)) }));
+
+  api.post("/tools/:name", async (c) => {
+    const access = accessFrom(c);
+    const body = await jsonBody(c);
+    return c.json({ result: await tools.call(access, c.req.param("name"), body) });
+  });
 
   // Link
 

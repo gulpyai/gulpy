@@ -31,7 +31,16 @@ import { beginAuthorization, completeAuthorization, OAuthError, type Connected }
 import { agentChoices, viewCatalog, viewConnection, viewConnections } from "../present.ts";
 import { beginUpstream, completeUpstream } from "../upstream/oauth.ts";
 import type { Vault } from "../vault.ts";
-import { AgentConsent, AgentDone, AgentSignIn } from "../views/agent.tsx";
+import {
+  AgentConsent,
+  AgentDone,
+  AgentSignIn,
+  DeviceConsent,
+  DeviceDone,
+  DeviceEnter,
+  DeviceSignIn,
+} from "../views/agent.tsx";
+import { allowDevice, denyDevice, normalizeUserCode, pendingAgent } from "../device.ts";
 import { LinkConsent, LinkDone, LinkLoading, LinkProblem, LinkSignIn } from "../views/link.tsx";
 import type { SignInState } from "../views/signin.tsx";
 import {
@@ -173,6 +182,11 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       const link = findLink(deps, next.searchParams.get("token") ?? undefined);
       if (link) return render(c, <LinkSignIn link={link} state={state} />, status);
     }
+    if (next.pathname === "/device") {
+      const code = normalizeUserCode(next.searchParams.get("code"));
+      const agent = code ? pendingAgent(deps, code) : null;
+      if (code && agent) return render(c, <DeviceSignIn app={agent} code={code} state={state} />, status);
+    }
     if (next.pathname === "/oauth/authorize") {
       const agent = await findAgent(deps, next.searchParams.get("client_id") ?? undefined);
       const noTap = deps.config.autoApprove && isTrustedReturn(next.searchParams.get("redirect_uri") ?? "");
@@ -223,6 +237,42 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     const current = viewer(deps, c);
     if (current && checkCsrf(current, form.csrf)) endSession(deps, c);
     return c.redirect(safeNext(String(form.next ?? "")), 303);
+  });
+
+  // Connect to Gulpy: an agent on the computer of the user (src/device.ts)
+
+  app.get("/device", (c) => {
+    const typed = c.req.query("code");
+    if (typed === undefined) return render(c, <DeviceEnter />);
+    const code = normalizeUserCode(typed);
+    const agent = code ? pendingAgent(deps, code) : null;
+    if (!code || !agent) {
+      return render(c, <DeviceEnter error="This code does not work. It can be old: ask your agent for a new one." />, 400);
+    }
+    const current = viewer(deps, c);
+    if (!current) return render(c, <DeviceSignIn app={agent} code={code} state={{ next: `/device?code=${code}` }} />);
+    const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
+    return render(c, <DeviceConsent app={agent} code={code} viewer={current} logos={logos} />);
+  });
+
+  app.post("/device", async (c) => {
+    const form = await c.req.parseBody();
+    const code = normalizeUserCode(form.code);
+    const current = viewer(deps, c);
+    if (!code) return render(c, <DeviceEnter error="This code does not work." />, 400);
+    if (!current) return c.redirect(`/device?code=${code}`, 303);
+    if (!sameOrigin(c, deps.config.baseUrl) || !checkCsrf(current, form.csrf)) {
+      return c.text("The form expired. Go back and try again.", 403);
+    }
+    const agent = pendingAgent(deps, code);
+    if (!agent) return render(c, <DeviceEnter error="This code expired. Ask your agent for a new one." />, 400);
+    if (form.decision !== "allow") {
+      denyDevice(deps, code, current.user.id);
+      return render(c, <DeviceDone name={agent.name} allowed={false} logos={[]} />);
+    }
+    allowDevice(deps, code, current.user.id);
+    const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
+    return render(c, <DeviceDone name={agent.name} allowed logos={logos} />);
   });
 
   // Agents that sign in with standard OAuth

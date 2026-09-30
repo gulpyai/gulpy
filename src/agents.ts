@@ -56,8 +56,9 @@ export function authorizationServerMetadata(deps: Deps) {
     token_endpoint: `${base}/oauth/token`,
     registration_endpoint: `${base}/oauth/register`,
     revocation_endpoint: `${base}/oauth/revoke`,
+    device_authorization_endpoint: `${base}/device/code`,
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
+    grant_types_supported: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
     client_id_metadata_document_supported: true,
@@ -124,7 +125,7 @@ export function isTrustedReturn(redirectUri: string): boolean {
   return agentCompany(redirectUri) !== undefined;
 }
 
-function cleanName(value: unknown): string {
+export function cleanName(value: unknown): string {
   const name = typeof value === "string" ? value.replace(/[\x00-\x1f]/g, "").trim().slice(0, 80) : "";
   return name || "Agent with no name";
 }

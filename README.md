@@ -50,6 +50,31 @@ on the computer, the agents show a list of tools that you can run.
 
 ## Add Gulpy to a real agent
 
+### An agent on your computer: "Connect to Gulpy"
+
+Say this to Claude Code, Codex, Cursor or any agent that can run commands:
+
+```
+Connect to Gulpy. Read https://app.gulpy.ai/agents.md and follow it.
+```
+
+The agent runs `curl -fsSL https://app.gulpy.ai/connect.sh | sh`. A browser window
+opens with a code. You sign in and tap **Allow** one time. The agent saves one key in
+`~/.config/gulpy/key` and calls all your tools with plain HTTP:
+
+```sh
+curl https://app.gulpy.ai/v1/tools -H "Authorization: Bearer $(cat ~/.config/gulpy/key)"
+curl -X POST https://app.gulpy.ai/v1/tools/email_search -H "Authorization: Bearer $(cat ~/.config/gulpy/key)" \
+  -H "Content-Type: application/json" -d '{"query": "invoice"}'
+```
+
+The key reaches each tool, also the tools that you add later. It does not expire.
+Remove the agent on My tools to stop it. The sign-in is the device authorization
+grant (RFC 8628): `POST /device/code`, the page `/device`, `POST /device/token`.
+The one tap stays on purpose: anyone can ask for a code and send you the link.
+
+### ChatGPT, Claude and Grok in the browser: the MCP address
+
 Add a custom connector or MCP server with this address:
 
 ```

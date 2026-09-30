@@ -256,3 +256,121 @@ export const AgentDone: FC<{ to: string; name: string; logos: Logo[]; allowed: b
     </div>
   </LinkPage>
 );
+
+/* Connect to Gulpy: the sign-in of an agent on the computer of the user (src/device.ts). */
+
+const DeviceCode: FC<{ code: string }> = ({ code }) => (
+  <p class="device-code" aria-label="Code">
+    {code}
+  </p>
+);
+
+/** The user opened /device with no code, or with a code that does not work. */
+export const DeviceEnter: FC<{ error?: string }> = ({ error }) => (
+  <LinkPage title={`Connect an agent to ${BRAND.name}`}>
+    <header class="link-head">
+      <Mascot size="large" />
+      <h1>Connect an agent</h1>
+      <p class="muted">Type the code that your agent shows.</p>
+    </header>
+    {error && <Notice kind="error">{error}</Notice>}
+    <form method="get" action="/device" class="form-grid">
+      <div class="field">
+        <label for="device-code">Code</label>
+        <input
+          class="input"
+          id="device-code"
+          name="code"
+          required
+          autofocus
+          autocomplete="off"
+          autocapitalize="characters"
+          placeholder="WDJB-MJHT"
+        />
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">
+        Continue
+      </button>
+    </form>
+  </LinkPage>
+);
+
+export const DeviceSignIn: FC<{ app: App; code: string; state: SignInState }> = ({ app, code, state }) => (
+  <LinkPage title={`Connect ${app.name}`}>
+    <header class="link-head">
+      <Pair app={app} />
+      <h1>Connect {app.name}</h1>
+      <p class="muted">Sign in to {BRAND.name}. Then tap Allow, and {app.name} gets your tools.</p>
+      <DeviceCode code={code} />
+    </header>
+    <div class="link-stack">
+      <SignInForm state={state} />
+    </div>
+  </LinkPage>
+);
+
+export const DeviceConsent: FC<{ app: App; code: string; viewer: Viewer; logos: Logo[] }> = ({
+  app,
+  code,
+  viewer,
+  logos,
+}) => (
+  <LinkPage title={`Connect ${app.name}`}>
+    <header class="link-head">
+      <Pair app={app} />
+      <h1>Connect {app.name}?</h1>
+      <p class="muted">Check that your agent shows this code. If you did not start this, tap Cancel.</p>
+      <DeviceCode code={code} />
+    </header>
+    <div class="link-stack">
+      <p class="device-scope">
+        {app.name} gets all your tools, and the tools that you add later.
+        {logos.length > 0 && (
+          <span class="device-logos">
+            {logos.slice(0, 8).map((logo) => (
+              <ConnectorIcon logo={logo} small />
+            ))}
+          </span>
+        )}
+      </p>
+      <form method="post" action="/device" class="link-form">
+        <input type="hidden" name="csrf" value={viewer.csrf} />
+        <input type="hidden" name="code" value={code} />
+        <div class="link-actions">
+          <button class="btn btn-light" type="submit" name="decision" value="deny">
+            Cancel
+          </button>
+          <button class="btn btn-primary" type="submit" name="decision" value="allow">
+            Allow
+          </button>
+        </div>
+      </form>
+      <Disclosure name={app.name} />
+    </div>
+    <footer class="link-foot">
+      <p class="fine">
+        <Icon name="lock" />
+        Signed in as {viewer.user.email}. {BRAND.name} does not give your passwords to an agent.
+      </p>
+    </footer>
+  </LinkPage>
+);
+
+export const DeviceDone: FC<{ name: string; allowed: boolean; logos: Logo[] }> = ({ name, allowed, logos }) => (
+  <LinkPage title={allowed ? "All set" : "Cancelled"}>
+    <div class={`done${allowed ? " done-gulp" : ""}`}>
+      {allowed ? (
+        <div class="gulp-stage">
+          {logos.slice(0, 5).map((logo, index) => (
+            <ConnectorIcon logo={logo} extra={`gulp-item gulp-item-${index + 1}`} />
+          ))}
+          <Mascot size="hero" mood="gulp" />
+        </div>
+      ) : (
+        <Mascot size="large" />
+      )}
+      <h1>{allowed ? "All set" : "Nothing was shared"}</h1>
+      <p class="muted">{allowed ? `Go back to ${name}. It has your tools now. You can close this page.` : "You can close this page."}</p>
+    </div>
+  </LinkPage>
+);

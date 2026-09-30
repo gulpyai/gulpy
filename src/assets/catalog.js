@@ -27,10 +27,11 @@
     });
   });
 
-  // The button that copies the address for an agent.
+  // Each button copies the text in its own box: the sentence for an agent, or the address.
   document.querySelectorAll("[data-copy]").forEach(function (button) {
     button.addEventListener("click", function () {
-      var source = document.querySelector("[data-copy-text]");
+      var box = button.parentElement;
+      var source = box && box.querySelector("[data-copy-text]");
       var label = button.querySelector("[data-copy-label]");
       if (!source || !navigator.clipboard) return;
       navigator.clipboard.writeText(source.textContent.trim()).then(function () {

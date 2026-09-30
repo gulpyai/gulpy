@@ -344,6 +344,11 @@ const PlanLine: FC<{ plan: PlanView; viewer: Viewer; now: number }> = ({ plan, v
   </div>
 );
 
+/** What the user says to an agent on this computer, for example Claude Code or Codex. See src/device.ts. */
+function connectSentence(mcpUrl: string): string {
+  return `Connect to ${BRAND.name}. Read ${mcpUrl.replace(/\/mcp$/, "")}/agents.md and follow it.`;
+}
+
 const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
   <section class="panel guide">
     <div class="guide-main">
@@ -352,11 +357,22 @@ const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
           {model.connections.length > 0 ? `Add ${BRAND.name} to an agent` : `Step 2. Add ${BRAND.name} to an agent`}
         </h2>
         <p class="muted">
-          {model.noTap
-            ? `Paste this address into the agent. The agent opens ${BRAND.name} and gets your tools.`
-            : `Paste this address into the agent. The agent opens ${BRAND.name}, and you tap Allow.`}
+          Say this to an agent on your computer, for example Claude Code, Codex or Cursor. A window opens. Tap Allow,
+          and the agent has all your tools.
         </p>
       </div>
+      <div class="address address-wrap">
+        <code data-copy-text>{connectSentence(model.mcpUrl)}</code>
+        <button class="copy" type="button" data-copy aria-label="Copy the sentence">
+          <Icon name="copy" />
+          <span data-copy-label>Copy</span>
+        </button>
+      </div>
+      <p class="muted">
+        {model.noTap
+          ? `For ChatGPT, Claude and Grok in the browser, paste this address. The agent opens ${BRAND.name} and gets your tools.`
+          : `For ChatGPT, Claude and Grok in the browser, paste this address. The agent opens ${BRAND.name}, and you tap Allow.`}
+      </p>
       <div class="address">
         <code data-copy-text>{model.mcpUrl}</code>
         <button class="copy" type="button" data-copy aria-label="Copy the address">
@@ -366,7 +382,7 @@ const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
       </div>
       {model.local && (
         <p class="guide-note">
-          This address works on this computer only. ChatGPT, Claude and Grok need a public address.
+          These addresses work on this computer only. ChatGPT, Claude and Grok need a public address.
         </p>
       )}
     </div>
@@ -387,9 +403,12 @@ const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
       <details name="guide">
         <summary>
           <Avatar label="Claude Code" image={logoImage("claude")} />
-          Claude Code
+          Claude Code, Codex, Cursor
         </summary>
-        <pre class="command">claude mcp add --transport http gulpy {model.mcpUrl}</pre>
+        <ol>
+          <li>Say the sentence above to the agent. Or run this in a terminal:</li>
+        </ol>
+        <pre class="command">curl -fsSL {model.mcpUrl.replace(/\/mcp$/, "")}/connect.sh | sh</pre>
       </details>
     </div>
   </section>
