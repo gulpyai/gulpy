@@ -49,6 +49,7 @@ SITES: dict[str, str] = {
     "outlook-email": "https://outlook.live.com",
     "outlook-calendar": "https://outlook.live.com",
     "google-drive": "https://drive.google.com",
+    "microsoft": "https://www.microsoft.com",
     "onedrive": "https://onedrive.live.com",
     "notion": "https://www.notion.com",
     "linear": "https://linear.app",

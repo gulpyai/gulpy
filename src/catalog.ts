@@ -6,9 +6,7 @@ import {
   siClickup,
   siFigma,
   siGithub,
-  siGmail,
-  siGooglecalendar,
-  siGoogledrive,
+  siGoogle,
   siHubspot,
   siIntercom,
   siLinear,
@@ -109,12 +107,9 @@ function native(
  * `scripts/check-catalog.ts` does the check again.
  */
 const CONNECTORS: Connector[] = [
-  native("gmail", "Gmail", "Read and send email", "google", ["email.read", "email.send"], siGmail),
-  native("google-calendar", "Google Calendar", "See and change events", "google", ["calendar.read", "calendar.write"], siGooglecalendar),
-  native("google-drive", "Google Drive", "Files, Docs and Sheets", "google", ["files.read"], siGoogledrive),
-  native("outlook-email", "Outlook Email", "Read and send email", "microsoft", ["email.read", "email.send"], "0F6CBD"),
-  native("outlook-calendar", "Outlook Calendar", "See and change events", "microsoft", ["calendar.read", "calendar.write"], "0F6CBD"),
-  native("onedrive", "OneDrive", "Search and read files", "microsoft", ["files.read"], "0078D4"),
+  // One card for each company: one sign-in gives all its apps.
+  native("google", "Google", "Gmail, Calendar, Drive", "google", ["email.read", "email.send", "calendar.read", "calendar.write", "files.read"], siGoogle),
+  native("microsoft", "Microsoft", "Outlook, Calendar, OneDrive", "microsoft", ["email.read", "email.send", "calendar.read", "calendar.write", "files.read"], "0078D4"),
 
   mcp("notion", "Notion", "Pages, wikis and databases", "Work", "https://mcp.notion.com/mcp", siNotion),
   mcp("linear", "Linear", "Issues, projects and cycles", "Work", "https://mcp.linear.app/mcp", siLinear),

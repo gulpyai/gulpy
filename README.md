@@ -98,14 +98,14 @@ them, Gulpy must have a public `https` address. Set `GULPY_BASE_URL` to it.
 
 ## Real connectors
 
-The list has 38 real connectors. On 2026-09-29 each MCP address answered with its
+The list has 34 real connectors. On 2026-09-29 each MCP address answered with its
 sign-in metadata.
 
 | Group | Count | What you must do |
 |---|---|---|
 | Register automatically | 25 | Nothing. Select **+**. Notion, Linear, Atlassian, Stripe, Vercel, Supabase, Canva, Higgsfield and others. |
 | Need an app that you register at the provider | 7 | GitHub, Slack, HubSpot, Asana, Box, Render, Figma. The list shows them as "Soon". |
-| Use the API of the provider, with Gulpy tools (Beta) | 6 | Gmail, Google Calendar, Google Drive, Outlook Email, Outlook Calendar, OneDrive. Register one Google app and one Microsoft app (table below). |
+| Use the API of the provider, with Gulpy tools (Beta) | 2 | Google (Gmail, Calendar, Drive) and Microsoft (Outlook, Calendar, OneDrive). One sign-in each. Register one Google app and one Microsoft app (table below). |
 
 Check the list against the real servers:
 
@@ -120,8 +120,8 @@ in the macOS Keychain for development.
 | Connector | Environment | Redirect address to register |
 |---|---|---|
 | GitHub, Slack, HubSpot, Asana, Box, Render, Figma | `CONNECTOR_<NAME>_CLIENT_ID`, `CONNECTOR_<NAME>_CLIENT_SECRET` | `<base>/oauth/callback/mcp` |
-| Gmail, Google Calendar, Google Drive | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `<base>/oauth/callback/google` |
-| Outlook Email, Outlook Calendar, OneDrive | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | `<base>/oauth/callback/microsoft` |
+| Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `<base>/oauth/callback/google` |
+| Microsoft | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | `<base>/oauth/callback/microsoft` |
 
 ```sh
 security add-generic-password -a "$USER" -s gulpy-connector-github-client-id -w "<client id>" -U
@@ -388,7 +388,7 @@ Not verified:
 
 Not built yet:
 
-- The Google and Microsoft apps. Without `GOOGLE_*` and `MICROSOFT_*`, their 6 tools show "Soon".
+- The Google and Microsoft apps. Without `GOOGLE_*` and `MICROSOFT_*`, their 2 cards show "Soon".
 - The 7 tools that show "Soon": GitHub, Slack, HubSpot, Asana, Box, Render, Figma. Each needs an app at the provider.
 - Skills and plugin packs. Gulpy has connectors only.
 - Connectors that use an API key and no OAuth, for example Exa and Firecrawl.

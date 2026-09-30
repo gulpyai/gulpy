@@ -56,7 +56,7 @@ import {
 } from "../views/site.tsx";
 
 /** The connectors in the picture at the top of the first page. */
-const HERO = ["gmail", "notion", "slack", "github", "linear", "figma", "stripe", "google-calendar"];
+const HERO = ["google", "notion", "slack", "github", "linear", "figma", "stripe", "microsoft"];
 
 export const CSP = [
   "default-src 'none'",

@@ -124,6 +124,11 @@
     "kind": "fill",
     "source": "https://manus.im/icon.png?icon.1k-e-nyr3k65n.png"
   },
+  "microsoft": {
+    "file": "microsoft.png",
+    "kind": "fill",
+    "source": "https://www.microsoft.com/favicon.ico?v2"
+  },
   "miro": {
     "file": "miro.png",
     "kind": "fill",

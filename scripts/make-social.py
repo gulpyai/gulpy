@@ -16,7 +16,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "src" / "assets"
-LOGOS = ["gmail", "notion", "slack", "github", "linear", "figma", "stripe", "google-calendar"]
+LOGOS = ["google", "notion", "slack", "github", "linear", "figma", "stripe", "microsoft"]
 DISPLAY = 'ui-rounded, "SF Pro Rounded", "Nunito", "Hiragino Maru Gothic ProN", system-ui, sans-serif'
 
 
