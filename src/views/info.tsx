@@ -7,7 +7,7 @@ import { Icon, SitePage, type PageMeta } from "./ui.tsx";
 export interface InfoModel {
   viewer: Viewer | null;
   /** The address that a person pastes into an agent. */
-  mcpUrl: string;
+  baseUrl: string;
   /** For search engines and link previews. Not set on a computer of a developer. */
   meta?: (path: string, description: string) => PageMeta | undefined;
 }
@@ -51,9 +51,9 @@ const QUESTIONS: { q: string; a: Child }[] = [
     q: `How do I add ${BRAND.name} to an agent?`,
     a: (
       <>
-        Open the connector settings of the agent and add a custom connector. Paste the {BRAND.name} address. The agent
-        opens {BRAND.name}, and you select <strong>Allow</strong>. The page <a href="/">My tools</a> has the steps for
-        Claude, ChatGPT, Grok and Claude Code.
+        Say to the agent: "Connect to {BRAND.name}." It reads the guide for agents and opens a window. You select{" "}
+        <strong>Allow</strong>. The agent then calls your tools with plain HTTP. This works with each agent that can run
+        commands or send web requests, for example Claude Code, Codex, Cursor and OpenClaw.
       </>
     ),
   },
@@ -141,10 +141,10 @@ export const Support: FC<{ model: InfoModel }> = ({ model }) => (
     </section>
 
     <section class="info-section">
-      <h2>Your {BRAND.name} address</h2>
-      <p>Paste this address into an agent to add {BRAND.name}.</p>
+      <h2>Connect an agent</h2>
+      <p>Say this to the agent. It reads the guide, you tap Allow, and it calls your tools with plain HTTP:</p>
       <p>
-        <code class="info-code">{model.mcpUrl}</code>
+        <code class="info-code">Connect to {BRAND.name}. Read {model.baseUrl}/agents.md and follow it.</code>
       </p>
     </section>
 
@@ -202,7 +202,8 @@ export const Security: FC<{ model: InfoModel }> = ({ model }) => (
           <strong>You sign in at the provider.</strong> {BRAND.name} does not see or keep the password of a tool.
         </li>
         <li>
-          <strong>You approve each agent.</strong> You select the tools, and Read only or Read and write.
+          <strong>You approve each agent.</strong> You tap Allow one time. {BRAND.name} then emails you, so a link that
+          someone sent you cannot connect an agent in secret.
         </li>
         <li>
           <strong>You see each call.</strong> The list shows the agent, the tool and the time. It does not keep the
@@ -212,7 +213,8 @@ export const Security: FC<{ model: InfoModel }> = ({ model }) => (
           <strong>You can stop access immediately.</strong> Remove an agent or a tool on the page My tools.
         </li>
         <li>
-          <strong>Agents use standard sign-in.</strong> OAuth 2.1 with PKCE. Access tokens stop working after 1 hour.
+          <strong>Each agent has its own key.</strong> {BRAND.name} keeps only a hash of it. Remove the agent and its key
+          stops at once.
         </li>
       </ul>
     </section>

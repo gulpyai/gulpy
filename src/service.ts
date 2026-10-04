@@ -118,7 +118,7 @@ function toApiError(error: unknown): ApiError {
   throw error;
 }
 
-/** The operations that the REST API and the MCP server share. */
+/** The operations behind the REST API. */
 export class Gulpy {
   constructor(
     private readonly deps: Deps,

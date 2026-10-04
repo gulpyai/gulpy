@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS audit_log_user ON audit_log(user_id, ts);
 `;
 
-/** Connectors that are MCP servers, and agents that sign in with standard OAuth. */
+/** Connectors that are MCP servers, and agents that signed in with OAuth before Gulpy had keys. */
 const SCHEMA_V2 = `
 ALTER TABLE connections ADD COLUMN tools TEXT;
 ALTER TABLE connections ADD COLUMN tools_fetched_at INTEGER;

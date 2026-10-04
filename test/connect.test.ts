@@ -231,7 +231,7 @@ describe("connect to Gulpy", () => {
     const script = await (await world.fetch(`${GULPY}/connect.sh`)).text();
     expect(script).toContain(`BASE="${GULPY}"`);
     expect(script.startsWith("#!/bin/sh")).toBe(true);
-    const metadata = await (await world.fetch(`${GULPY}/.well-known/oauth-authorization-server`)).json();
-    expect(metadata.device_authorization_endpoint).toBe(`${GULPY}/device/code`);
+    expect(text).not.toContain("/mcp");
+    expect(script).not.toContain("mcp");
   });
 });

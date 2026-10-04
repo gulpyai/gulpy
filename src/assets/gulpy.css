@@ -1665,6 +1665,18 @@ code,
   word-break: break-all;
 }
 
+.guide-label {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #c9ccd1;
+}
+
+.guide-label a {
+  color: var(--lime);
+  word-break: break-all;
+}
+
 .secret-box {
   padding: 14px 16px;
   border-radius: var(--radius-sm);

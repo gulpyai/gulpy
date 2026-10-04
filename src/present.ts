@@ -1,10 +1,9 @@
 /** Builds what the pages show about connections and connectors. */
 import { backendOf } from "./access.ts";
-import { levelOf, type AccessLevel } from "./capabilities.ts";
 import { CATEGORIES, type Availability, type Category, type Connector } from "./catalog.ts";
 import type { Deps } from "./deps.ts";
 import type { LogoImage } from "./logos.ts";
-import type { Connection, Grant } from "./store.ts";
+import type { Connection } from "./store.ts";
 
 export interface ConnectionView {
   connection: Connection;
@@ -101,32 +100,4 @@ export function viewCatalog(deps: Deps, userId: string, onlyUsable = false): Cat
     category,
     cards: cards.filter((card) => card.connector.category === category),
   })).filter((group) => group.cards.length > 0);
-}
-
-export interface AgentChoice {
-  view: ConnectionView;
-  selected: boolean;
-  level: AccessLevel;
-  /** False if the connection needs a new sign-in. */
-  usable: boolean;
-}
-
-/**
- * What the approval page shows for one agent. An agent that the user approved
- * before keeps its selection. A new agent gets all connections, with read and
- * write access, so that one tap is enough.
- */
-export function agentChoices(deps: Deps, userId: string, grants: readonly Grant[], justConnected?: string): AgentChoice[] {
-  const byConnection = new Map(grants.map((grant) => [grant.connectionId, grant]));
-  const isNew = grants.length === 0;
-  return viewConnections(deps, userId).map((view) => {
-    const grant = byConnection.get(view.connection.id);
-    const usable = view.connection.status === "active";
-    return {
-      view,
-      usable,
-      selected: usable && (isNew || grant !== undefined || view.connection.id === justConnected),
-      level: grant ? levelOf(grant.capabilities) : "write",
-    };
-  });
 }

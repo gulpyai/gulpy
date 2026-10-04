@@ -6,12 +6,12 @@
   var agentName = root.dataset.name;
   var tagline = root.dataset.tagline;
   var ideas = JSON.parse(root.dataset.ideas || "[]");
-  var denied = new URLSearchParams(window.location.search).has("denied");
+  var gulpyUrl = root.dataset.gulpy;
+  var problem = null;
   var state = { connected: false };
   var turns = [];
   var busy = false;
   var results = {};
-  var popup = null;
 
   // Builds DOM nodes. Text goes in as text, not as HTML: answers and tool results are not trusted input.
   function h(tag, attrs) {
@@ -38,30 +38,40 @@
     });
   }
 
-  // The sign-in is in a small window, as ChatGPT, Claude and Grok do it.
-  function connect() {
-    var width = 480;
-    var height = 780;
-    var left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
-    var top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
-    popup = window.open("/connect", "agent-connect", "popup=yes,width=" + width + ",height=" + height + ",left=" + left + ",top=" + top);
-    if (!popup) {
-      window.location.assign("/connect");
-      return;
-    }
-    var timer = setInterval(function () {
-      if (!popup || !popup.closed) return;
-      clearInterval(timer);
-      popup = null;
+  // The user pastes the key, or the full message from the Gulpy dashboard. The server finds the key in it.
+  function connect(pasted) {
+    if (!pasted) return;
+    api("/connect", { pasted: pasted }).then(function (reply) {
+      problem = reply.connected ? null : reply.error === "no_key" ? "no_key" : "bad_key";
       refresh();
-    }, 500);
+    });
   }
 
-  window.addEventListener("message", function (event) {
-    if (event.origin !== window.location.origin || !event.data || event.data.source !== "agent") return;
-    denied = !event.data.connected;
-    refresh();
-  });
+  // The device flow: Gulpy opens a window, the user taps Allow, and the server takes the key.
+  var polling = null;
+  function connectWithGulpy() {
+    var popup = window.open("", "gulpy", "width=480,height=720");
+    api("/connect/start", {}).then(function (reply) {
+      if (!reply.url) {
+        if (popup) popup.close();
+        problem = "down";
+        return render();
+      }
+      if (popup) popup.location.href = reply.url;
+      else window.open(reply.url, "_blank", "noopener");
+      problem = "waiting";
+      render();
+      clearInterval(polling);
+      polling = setInterval(function () {
+        api("/connect/poll", {}).then(function (poll) {
+          if (poll.pending) return;
+          clearInterval(polling);
+          problem = poll.connected ? null : "refused";
+          refresh();
+        });
+      }, 5000);
+    });
+  }
 
   function logo() {
     return h("span", { class: "logo" }, h("span", { class: "logo-mark" }, agentName.charAt(0)), agentName);
@@ -74,10 +84,31 @@
       logo(),
       h("h1", null, tagline),
       h("p", null, agentName + " has no tools of its own. Give it the tools that you have in Gulpy."),
-      state.removed ? h("p", { class: "note" }, "You removed the access in Gulpy. Connect again to continue.") : null,
-      denied ? h("p", { class: "note" }, "You did not approve. Nothing was shared.") : null,
-      h("button", { class: "primary big", "data-action": "connect" }, "Connect with Gulpy"),
-      h("p", { class: "small" }, "A window opens. You do not give " + agentName + " a password."),
+      state.removed ? h("p", { class: "note" }, "You removed " + agentName + " in Gulpy, so its key stopped. Connect again.") : null,
+      problem === "waiting" ? h("p", { class: "note" }, "Tap Allow in the Gulpy window. " + agentName + " waits for it.") : null,
+      problem === "refused" ? h("p", { class: "note" }, "Gulpy did not connect " + agentName + ". Try again.") : null,
+      problem === "down" ? h("p", { class: "note" }, "Gulpy did not answer. Is it running?") : null,
+      h("button", { class: "primary big", type: "button", "data-action": "device" }, "Connect with Gulpy"),
+      problem === "no_key" ? h("p", { class: "note" }, "No Gulpy key found. It starts with gulpy_.") : null,
+      problem === "bad_key" ? h("p", { class: "note" }, "Gulpy did not accept this key.") : null,
+      h(
+        "form",
+        { class: "paste", "data-connect": "yes" },
+        h("textarea", {
+          name: "pasted",
+          rows: "4",
+          placeholder: "Or paste a Gulpy key, for example from ~/.config/gulpy/key",
+          "aria-label": "Your Gulpy key",
+        }),
+        h("button", { class: "quiet", type: "submit" }, "Use this key"),
+      ),
+      h(
+        "p",
+        { class: "small" },
+        "Add your tools on ",
+        h("a", { href: gulpyUrl, target: "_blank", rel: "noopener" }, "Gulpy"),
+        ". You do not give " + agentName + " a password.",
+      ),
     );
   }
 
@@ -181,7 +212,6 @@
           "div",
           { class: "chat-tools" },
           h("span", { class: "pill pill-live" }, "Gulpy · " + state.tools.length + " tools"),
-          h("button", { class: "quiet", "data-action": "connect" }, "Change"),
           h("button", { class: "quiet", "data-action": "disconnect" }, "Disconnect"),
         ),
       ),
@@ -253,6 +283,11 @@
   }
 
   root.addEventListener("submit", function (event) {
+    var paste = event.target.closest("[data-connect]");
+    if (paste) {
+      event.preventDefault();
+      return connect(paste.elements.pasted.value.trim());
+    }
     var form = event.target.closest("[data-ask]");
     if (!form) return;
     event.preventDefault();
@@ -283,7 +318,7 @@
 
     var action = event.target.closest("[data-action]");
     if (!action) return;
-    if (action.dataset.action === "connect") connect();
+    if (action.dataset.action === "device") return connectWithGulpy();
     if (action.dataset.action === "disconnect") {
       results = {};
       turns = [];

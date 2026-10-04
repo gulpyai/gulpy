@@ -10,8 +10,7 @@ import { apiRoutes } from "./routes/api.ts";
 import { Tools } from "./tools.ts";
 import { billingRoutes } from "./routes/billing.ts";
 import { infoRoutes } from "./routes/info.tsx";
-import { mcpRoutes } from "./routes/mcp.ts";
-import { oauthRoutes } from "./routes/oauth.ts";
+import { connectRoutes } from "./routes/connect.ts";
 import { pageRoutes } from "./routes/pages.tsx";
 import { Gulpy } from "./service.ts";
 import { openDatabase, Store } from "./store.ts";
@@ -65,7 +64,7 @@ export async function createApp(deps: Deps): Promise<GulpyApp> {
   const gulpy = new Gulpy(deps, vault);
   const app = new Hono();
 
-  // An old address of this server. 308 keeps the method and the body, so an agent that POSTs to /mcp follows it.
+  // An old address of this server. 308 keeps the method and the body, so an agent that POSTs to the API follows it.
   if (deps.config.redirectHosts.length > 0) {
     const old = new Set(deps.config.redirectHosts);
     app.use("*", async (c, next) => {
@@ -110,10 +109,9 @@ export async function createApp(deps: Deps): Promise<GulpyApp> {
     c.json({ ok: true, providers: [...deps.providers.keys()], connectors: deps.catalog.all().length }),
   );
   app.route("/v1", apiRoutes(deps, gulpy, new Tools(gulpy)));
-  app.route("/mcp", mcpRoutes(deps, gulpy));
   // Before the pages: agents call these endpoints from other origins, with no cookie. Stripe too.
   app.route("/", billingRoutes(deps));
-  app.route("/", oauthRoutes(deps));
+  app.route("/", connectRoutes(deps));
   app.route("/", infoRoutes(deps));
   app.route("/", pageRoutes(deps, vault));
 

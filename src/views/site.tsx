@@ -58,18 +58,8 @@ const PROMISES = [
 ] as const;
 
 /**
- * The AI apps that passed a live test with Gulpy on 2026-09-27: each one added Gulpy,
- * showed the approval page and made correct tool calls. See
- * research/notes/10-assistant-support.md. Add a name only after a live test.
- * Names only: Anthropic, OpenAI and Google do not permit their logos without
- * approval (docs/legal-and-security.md, section 6.4).
- */
-const AGENTS = ["ChatGPT", "Claude", "Gemini", "Grok", "Le Chat", "Manus", "Claude Code", "Codex"] as const;
-
-/**
- * The AI apps in the map of "How it works", as icons. Claude Code and Codex are not here: their icons are the
- * same as Claude and ChatGPT. Poke and Cursor say in their documents that they accept a custom connector; they
- * were not tested with Gulpy. Instinct is not here: it has no custom connector.
+ * The AI makers in the map of "How it works", as icons. An agent connects with the device flow and a key, so
+ * it must run commands or send web requests (Claude Code, Codex, Gemini CLI, Cursor). The chat apps alone cannot.
  */
 const DIAGRAM_AGENTS = [
   { name: "ChatGPT", logo: "chatgpt" },
@@ -91,8 +81,8 @@ export const Landing: FC<{ model: LandingModel }> = ({ model }) => {
           <div class="hero-copy">
             <h1>{BRAND.promise}</h1>
             <p class="lede">
-              ChatGPT, Claude and Grok each make you connect the same tools again. Connect them to {BRAND.name} one
-              time. Then each new agent gets them with one tap.
+              Each AI makes you connect the same tools again. Connect them to {BRAND.name} one time. Then say "connect
+              to {BRAND.name}" to any agent, and it calls your tools with plain HTTP.
             </p>
             <div class="signin-card" id="start">
               <h2>{state.otpId ? "Check your email" : "Start free"}</h2>
@@ -253,10 +243,8 @@ export interface DashboardModel {
     appName: string | null;
     target: string | null;
   }[];
-  /** The address that the user gives to an agent. */
-  mcpUrl: string;
-  /** True if an agent that Gulpy knows connects with no approval step. */
-  noTap: boolean;
+  /** The address of Gulpy. Agents call `${baseUrl}/v1`. */
+  baseUrl: string;
   /** True if only this computer can reach the address. */
   local: boolean;
   calls: number;
@@ -282,35 +270,6 @@ const ACTIONS: Record<string, string> = {
 };
 
 const Hidden: FC<{ viewer: Viewer }> = ({ viewer }) => <input type="hidden" name="csrf" value={viewer.csrf} />;
-
-const GUIDES = [
-  {
-    id: "claude",
-    name: "Claude",
-    logo: "claude",
-    steps: [
-      "Open Customize, then Connectors.",
-      'Select "+", then "Add custom connector".',
-      "Paste the address. Select Add, then Connect.",
-    ],
-  },
-  {
-    id: "chatgpt",
-    name: "ChatGPT",
-    logo: "chatgpt",
-    steps: [
-      "Open Settings, then Security and login. Turn on Developer mode.",
-      "Select the plus button and create an app for a remote MCP server.",
-      "Paste the address and sign in.",
-    ],
-  },
-  {
-    id: "grok",
-    name: "Grok",
-    logo: "grok",
-    steps: ["Open grok.com/connectors.", "Select New Connector, then Custom.", "Paste the address and sign in."],
-  },
-] as const;
 
 /** The plan of the person, with the way to change it. */
 const PlanLine: FC<{ plan: PlanView; viewer: Viewer; now: number }> = ({ plan, viewer }) => (
@@ -344,9 +303,9 @@ const PlanLine: FC<{ plan: PlanView; viewer: Viewer; now: number }> = ({ plan, v
   </div>
 );
 
-/** What the user says to an agent on this computer, for example Claude Code or Codex. See src/device.ts. */
-function connectSentence(mcpUrl: string): string {
-  return `Connect to ${BRAND.name}. Read ${mcpUrl.replace(/\/mcp$/, "")}/agents.md and follow it.`;
+/** What the user says to an agent, for example Claude Code or Codex. See src/device.ts. */
+function connectSentence(baseUrl: string): string {
+  return `Connect to ${BRAND.name}. Read ${baseUrl}/agents.md and follow it.`;
 }
 
 const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
@@ -357,59 +316,29 @@ const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
           {model.connections.length > 0 ? `Add ${BRAND.name} to an agent` : `Step 2. Add ${BRAND.name} to an agent`}
         </h2>
         <p class="muted">
-          Say this to an agent on your computer, for example Claude Code, Codex or Cursor. A window opens. Tap Allow,
-          and the agent has all your tools.
+          Say this to any agent that can run commands or send web requests, for example Claude Code, Codex, Cursor or
+          OpenClaw. A window opens. Tap Allow, and the agent has all your tools.
         </p>
       </div>
       <div class="address address-wrap">
-        <code data-copy-text>{connectSentence(model.mcpUrl)}</code>
+        <code data-copy-text>{connectSentence(model.baseUrl)}</code>
         <button class="copy" type="button" data-copy aria-label="Copy the sentence">
           <Icon name="copy" />
           <span data-copy-label>Copy</span>
         </button>
       </div>
-      <p class="muted">
-        {model.noTap
-          ? `For ChatGPT, Claude and Grok in the browser, paste this address. The agent opens ${BRAND.name} and gets your tools.`
-          : `For ChatGPT, Claude and Grok in the browser, paste this address. The agent opens ${BRAND.name}, and you tap Allow.`}
-      </p>
-      <div class="address">
-        <code data-copy-text>{model.mcpUrl}</code>
-        <button class="copy" type="button" data-copy aria-label="Copy the address">
-          <Icon name="copy" />
-          <span data-copy-label>Copy</span>
-        </button>
-      </div>
       {model.local && (
-        <p class="guide-note">
-          These addresses work on this computer only. ChatGPT, Claude and Grok need a public address.
-        </p>
+        <p class="guide-note">This address works on this computer only. An agent in the cloud needs a public address.</p>
       )}
     </div>
     <div class="guide-steps">
-      {GUIDES.map((guide) => (
-        <details name="guide" open={guide.id === "claude"}>
-          <summary>
-            <Avatar label={guide.name} image={logoImage(guide.logo)} />
-            {guide.name}
-          </summary>
-          <ol>
-            {guide.steps.map((step) => (
-              <li>{step}</li>
-            ))}
-          </ol>
-        </details>
-      ))}
-      <details name="guide">
-        <summary>
-          <Avatar label="Claude Code" image={logoImage("claude")} />
-          Claude Code, Codex, Cursor
-        </summary>
-        <ol>
-          <li>Say the sentence above to the agent. Or run this in a terminal:</li>
-        </ol>
-        <pre class="command">curl -fsSL {model.mcpUrl.replace(/\/mcp$/, "")}/connect.sh | sh</pre>
-      </details>
+      <p class="guide-label">Or connect from a terminal</p>
+      <pre class="command">curl -fsSL {model.baseUrl}/connect.sh | sh</pre>
+      <p class="guide-label">Then the agent calls your tools with the key</p>
+      <pre class="command">{`curl ${model.baseUrl}/v1/tools -H "Authorization: Bearer $(cat ~/.config/gulpy/key)"`}</pre>
+      <p class="guide-label">
+        The full guide for agents: <a href="/agents.md">{model.baseUrl}/agents.md</a>
+      </p>
     </div>
   </section>
 );
@@ -467,9 +396,7 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
         <div class="summary-title">
           <h1>My tools</h1>
           <p class="muted">
-            {model.noTap
-              ? "Connect a tool one time. Each of your agents gets it."
-              : "Connect a tool one time. Approve each agent with one tap."}
+            Connect a tool one time. Each of your agents gets it.
           </p>
         </div>
         <ul class="stats">
@@ -702,7 +629,7 @@ export const Developers: FC<{
         <div class="summary-title">
           <h1>Developers</h1>
           <p class="muted">
-            An agent that supports MCP needs no registration: give it <code>{baseUrl}/mcp</code>. Register an app here
+            An agent needs no registration: it connects with <code>{baseUrl}/agents.md</code>. Register an app here
             only to open {BRAND.name} from your own page.
           </p>
         </div>
