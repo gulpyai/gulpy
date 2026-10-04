@@ -295,6 +295,18 @@ test/               end-to-end tests. They use no network.
   fixtures/         a mail provider and MCP connectors for the tests only
 ```
 
+## Releases
+
+| | test.gulpy.ai | app.gulpy.ai |
+|---|---|---|
+| How | Merge a pull request to `main` | Publish a GitHub release with a tag `v*` (for example `v2026.10.03`) on a commit of `main` |
+| Checks first | CI (typecheck, tests, Docker image starts) | CI, then a reviewer approves the `production` environment |
+| Data | Its own database and Stripe TEST keys | The real database and Stripe LIVE keys |
+
+Pull requests run CI only. To send any branch to test, or to roll back production to an older tag: Actions > Deploy > Run workflow.
+`deploy/release.sh` sends the image built by CI to the server and starts it. If the new copy does not answer, it starts the previous one again.
+The secrets of the app stay on the server. GitHub holds only a deploy SSH key.
+
 ## Tests
 
 ```sh

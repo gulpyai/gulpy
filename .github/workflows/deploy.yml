@@ -1,0 +1,86 @@
+name: Deploy
+
+# test.gulpy.ai:  every push to main, after CI passes.
+# app.gulpy.ai:   a tag v* (for example from "Draft a new release" on GitHub), after CI passes
+#                 and a reviewer approves the production environment. The tag must be on main.
+# Either, by hand: Actions > Deploy > Run workflow. Pick a branch or tag and the target.
+# Roll back:      run it by hand on an older tag with the target production.
+#
+# The secrets of the app stay on the server in /etc/gulpy and /etc/gulpy-test. GitHub holds only
+# a deploy SSH key and signs in to Google Cloud with workload identity (no Google key).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to deploy
+        type: choice
+        options: [test, production]
+        default: test
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.ref_type == 'tag' && 'production' || inputs.target || 'test' }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: ${{ github.ref_type == 'tag' && 'production' || inputs.target || 'test' }}
+      url: https://${{ (github.ref_type == 'tag' && 'production' || inputs.target || 'test') == 'production' && 'app' || 'test' }}.gulpy.ai
+    env:
+      TARGET: ${{ github.ref_type == 'tag' && 'production' || inputs.target || 'test' }}
+      IMAGE: gulpy:${{ github.sha }}
+      VM: ${{ vars.VM_NAME }}
+      VM_ZONE: ${{ vars.VM_ZONE }}
+      GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Production code must be on main
+        if: env.TARGET == 'production'
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main. Merge it to main and test it first."
+            exit 1
+          }
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          VM_HOST_KEY: ${{ vars.VM_HOST_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s %s\n' "$VM" "$VM_HOST_KEY" > ~/.ssh/known_hosts
+
+      - name: Deploy to ${{ env.TARGET }}
+        run: deploy/release.sh "$TARGET" "$IMAGE"
