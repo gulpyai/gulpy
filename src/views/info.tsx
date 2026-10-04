@@ -360,7 +360,8 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
           company, with its own privacy policy. {BRAND.name} does not control what an agent does with the data.
         </li>
         <li>
-          <strong>Our service providers.</strong> Cloudflare carries all traffic to {BRAND.name} and hosts gulpy.ai.
+          <strong>Our service providers.</strong> Google Cloud runs the server, in the United States. Cloudflare
+          carries all traffic to {BRAND.name} and hosts gulpy.ai.
           Resend sends email. Stripe takes payments.
         </li>
         <li>
@@ -466,8 +467,8 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
       <h2>Changes and questions</h2>
       <p>
         If this page changes, the date at the top changes. For an important change, we send a message to your email
-        address before it starts. We do not use Google data in a new way before you agree. {LEGAL.entity} is
-        responsible for your data (the "controller"). Send questions to <Mail to={CONTACT.privacy} />.
+        address before it starts. We do not use Google data in a new way before you agree. {LEGAL.entity} ({LEGAL.address})
+        is responsible for your data (the "controller"). Send questions to <Mail to={CONTACT.privacy} />.
       </p>
     </section>
   </InfoPage>
@@ -694,7 +695,7 @@ export const Terms: FC<{ model: InfoModel }> = ({ model }) => (
 
     <Clause n={18} title="Contact">
       <p>
-        {LEGAL.entity} · <Mail to={CONTACT.support} />
+        {LEGAL.entity} · {LEGAL.address} · <Mail to={CONTACT.support} />
       </p>
     </Clause>
   </InfoPage>

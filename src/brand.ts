@@ -24,7 +24,9 @@ export const PRICING_URL = `${SITE_URL}/pricing`;
  * the next sign-in.
  */
 export const LEGAL = {
-  entity: "Gulpy",
+  /** Gulpy, Inc., a Delaware corporation, made through Stripe Atlas on September 28, 2026. */
+  entity: "Gulpy, Inc.",
+  address: "275 N Harrison Street, Unit 208, Princeton, NJ 08540, United States",
   governingLaw: "the State of New Jersey",
   courts: "the state and federal courts in Mercer County, New Jersey",
   rulesVersion: "2026-09-27",
