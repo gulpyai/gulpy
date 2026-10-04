@@ -9,16 +9,23 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Deps } from "./deps.ts";
 import { ACTIVE_STATUSES, type PaidPlan, type Subscription, type User } from "./store.ts";
 
-export const PLANS: readonly PaidPlan[] = ["personal", "family", "business"];
+/** Each paid plan that Stripe can report. */
+export const PLANS: readonly PaidPlan[] = ["pro", "personal", "family", "business"];
+/** The plans for sale. */
+export const FOR_SALE: readonly PaidPlan[] = ["pro"];
 export const INTERVALS = ["monthly", "yearly"] as const;
 export type Interval = (typeof INTERVALS)[number];
 
 export const PLAN_NAMES: Record<PaidPlan | "free", string> = {
   free: "Free",
+  pro: "Pro",
   personal: "Personal",
   family: "Family",
   business: "Business",
 };
+
+/** The number of agents that a person on Free can approve. Pro has no limit. */
+export const FREE_AGENTS = 3;
 
 /** The list of calls of a person on Free goes back this many days. A paid plan keeps `LEGAL.callLogDays`. */
 export const FREE_HISTORY_DAYS = 7;
@@ -33,6 +40,10 @@ export function isPlan(value: unknown): value is PaidPlan {
   return typeof value === "string" && (PLANS as readonly string[]).includes(value);
 }
 
+export function isForSale(value: unknown): value is PaidPlan {
+  return typeof value === "string" && (FOR_SALE as readonly string[]).includes(value);
+}
+
 export function isInterval(value: unknown): value is Interval {
   return typeof value === "string" && (INTERVALS as readonly string[]).includes(value);
 }
@@ -45,6 +56,24 @@ export function billingOn(deps: Deps): boolean {
 /** True while the person has the plan. `past_due`: the card failed and Stripe tries again. */
 export function isPaid(subscription: Subscription | null): boolean {
   return subscription !== null && ACTIVE_STATUSES.includes(subscription.status);
+}
+
+/** True when the person has Pro, an older paid plan, or a Gulpy that sells no plans: no limits. */
+export function unlimited(deps: Deps, userId: string): boolean {
+  return !billingOn(deps) || isPaid(deps.store.subscription(userId));
+}
+
+/**
+ * True when the person can approve this agent: an agent that they approved before (the same app,
+ * or an app with the same name), a paid plan, or fewer than `FREE_AGENTS` agents on Free.
+ */
+export function agentAllowed(deps: Deps, userId: string, appId: string): boolean {
+  if (unlimited(deps, userId)) return true;
+  const agents = deps.store.agentsOfUser(userId, deps.now());
+  if (agents.includes(appId) || agents.length < FREE_AGENTS) return true;
+  // Each new sign-in of an agent (for example Claude Code again) makes a new app. The same name is the same agent.
+  const name = deps.store.appById(appId)?.name.trim().toLowerCase();
+  return !!name && agents.some((id) => deps.store.appById(id)?.name.trim().toLowerCase() === name);
 }
 
 export interface PlanView {
@@ -138,7 +167,16 @@ function idOf(value: string | { id: string } | null | undefined): string | null 
   return typeof value === "string" ? value : value.id;
 }
 
-async function stripe<T>(deps: Deps, method: "GET" | "POST", path: string, params: Record<string, string> = {}): Promise<T> {
+class StripeError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+async function stripe<T>(deps: Deps, method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string> = {}): Promise<T> {
   const key = deps.config.stripe?.secretKey;
   if (!key) throw new Error("Stripe is not set up");
   const query = new URLSearchParams(params).toString();
@@ -152,7 +190,7 @@ async function stripe<T>(deps: Deps, method: "GET" | "POST", path: string, param
     body: method === "POST" ? query : undefined,
   });
   const json = (await response.json()) as T & { error?: { message?: string } };
-  if (!response.ok) throw new Error(`Stripe ${method} ${path}: ${json.error?.message ?? `HTTP ${response.status}`}`);
+  if (!response.ok) throw new StripeError(`Stripe ${method} ${path}: ${json.error?.message ?? `HTTP ${response.status}`}`, response.status);
   return json;
 }
 
@@ -182,6 +220,30 @@ export async function checkoutUrl(deps: Deps, user: User, plan: PaidPlan, interv
   url.searchParams.set("client_reference_id", user.id);
   url.searchParams.set("prefilled_email", user.email);
   return url.toString();
+}
+
+/**
+ * Stops the paid plan of a person now, with no more charges. For the deletion of an account.
+ * True when there is nothing to stop, or Stripe stopped it.
+ */
+export async function cancelPlan(deps: Deps, userId: string): Promise<boolean> {
+  const subscription = deps.store.subscription(userId);
+  if (!billingOn(deps) || !subscription?.subscriptionId || !isPaid(subscription)) return true;
+  try {
+    await stripe(deps, "DELETE", `/subscriptions/${subscription.subscriptionId}`);
+    return true;
+  } catch (error) {
+    // Stripe does not know the plan any more, or it is cancelled already: nothing to stop.
+    if (error instanceof StripeError && error.status === 404) return true;
+    try {
+      const found = await stripe<{ status: string }>(deps, "GET", `/subscriptions/${subscription.subscriptionId}`);
+      if (!ACTIVE_STATUSES.includes(found.status)) return true;
+    } catch {
+      // The first error decides.
+    }
+    console.error("[gulpy] cancel during account deletion failed", error);
+    return false;
+  }
 }
 
 /** The address of the Stripe customer portal, where the person cancels, changes the plan or the card. */

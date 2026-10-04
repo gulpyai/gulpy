@@ -13,7 +13,9 @@ export const CONTACT = {
 } as const;
 
 /** The plans and their prices, on the marketing site. The dashboard links here from Free. */
-export const PRICING_URL = "https://gulpy.ai/pricing";
+/** The marketing site: the first page, and the plans. `GULPY_SITE_URL` sets it for a test copy. */
+export const SITE_URL = (process.env.GULPY_SITE_URL || "https://gulpy.ai").replace(/\/+$/, "");
+export const PRICING_URL = `${SITE_URL}/pricing`;
 
 /**
  * The legal facts that the Terms and the Privacy page use. Change `entity` to the
@@ -22,7 +24,9 @@ export const PRICING_URL = "https://gulpy.ai/pricing";
  * the next sign-in.
  */
 export const LEGAL = {
-  entity: "Gulpy",
+  /** Gulpy, Inc., a Delaware corporation, made through Stripe Atlas on September 28, 2026. */
+  entity: "Gulpy, Inc.",
+  address: "275 N Harrison Street, Unit 208, Princeton, NJ 08540, United States",
   governingLaw: "the State of New Jersey",
   courts: "the state and federal courts in Mercer County, New Jersey",
   rulesVersion: "2026-09-27",

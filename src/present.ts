@@ -65,7 +65,7 @@ export interface CatalogCard {
 }
 
 export interface CatalogGroup {
-  category: Category;
+  category: Category | "Popular";
   cards: CatalogCard[];
 }
 
@@ -83,12 +83,16 @@ function cardFor(connector: Connector, availability: Availability, connections: 
 
 const ORDER: Record<CardState, number> = { connected: 0, ready: 1, setup_needed: 2 };
 
+/** The tools that most people add. The dashboard shows them first, in their own group. */
+export const POPULAR = ["google", "microsoft", "notion", "slack", "github", "linear", "figma", "stripe"];
+
 /**
  * The catalog, in groups, with the state of each connector for this user.
  * In each group the tools that the user can add now are before the others.
  * `onlyUsable` removes the tools that the user cannot add now.
+ * `popularFirst` moves the popular tools to a group of their own, first.
  */
-export function viewCatalog(deps: Deps, userId: string, onlyUsable = false): CatalogGroup[] {
+export function viewCatalog(deps: Deps, userId: string, onlyUsable = false, popularFirst = false): CatalogGroup[] {
   const connections = deps.store.connectionsByUser(userId);
   const cards = deps.catalog
     .all()
@@ -96,8 +100,10 @@ export function viewCatalog(deps: Deps, userId: string, onlyUsable = false): Cat
     .filter((card) => !onlyUsable || card.state !== "setup_needed")
     // The sort keeps the order of the list for cards with the same state.
     .sort((a, b) => ORDER[a.state] - ORDER[b.state]);
-  return CATEGORIES.map((category) => ({
-    category,
-    cards: cards.filter((card) => card.connector.category === category),
-  })).filter((group) => group.cards.length > 0);
+  const popular = popularFirst ? cards.filter((card) => POPULAR.includes(card.connector.id)) : [];
+  const rest = cards.filter((card) => !popular.includes(card));
+  return [
+    { category: "Popular" as const, cards: popular },
+    ...CATEGORIES.map((category) => ({ category, cards: rest.filter((card) => card.connector.category === category) })),
+  ].filter((group) => group.cards.length > 0);
 }

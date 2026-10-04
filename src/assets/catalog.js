@@ -43,4 +43,112 @@
       });
     });
   });
+
+  // The tabs of the dashboard. With no script, all the panels show, one after the other.
+  document.querySelectorAll("[data-tabs]").forEach(function (tabs) {
+    var links = tabs.querySelectorAll("[data-tab-link]");
+    var panels = document.querySelectorAll("[data-tab]");
+    var names = Array.prototype.map.call(links, function (link) {
+      return link.dataset.tabLink;
+    });
+
+    function show(name) {
+      links.forEach(function (link) {
+        var on = link.dataset.tabLink === name;
+        link.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      panels.forEach(function (panel) {
+        panel.hidden = panel.dataset.tab !== name;
+      });
+    }
+
+    function fromHash() {
+      var name = location.hash.slice(1);
+      return names.indexOf(name) !== -1 ? name : names[0];
+    }
+
+    links.forEach(function (link) {
+      link.addEventListener("click", function (event) {
+        event.preventDefault();
+        show(link.dataset.tabLink);
+        history.replaceState(null, "", "#" + link.dataset.tabLink);
+      });
+    });
+    window.addEventListener("hashchange", function () {
+      show(fromHash());
+    });
+    document.documentElement.classList.add("has-tabs");
+    show(fromHash());
+  });
+
+  // The Edit form of an agent saves each choice at once, in the background. With no script, Save sends the form.
+  document.querySelectorAll("[data-access]").forEach(function (form) {
+    var status = form.querySelector("[data-access-status]");
+    var save = form.querySelector("[data-access-save]");
+    var agent = form.closest(".agent");
+    var count = agent && agent.querySelector("[data-agent-count]");
+    var timer = null;
+    var hide = null;
+    // Each save has a number. An older save that answers last does not change the page.
+    var sent = 0;
+    if (save) save.hidden = true;
+
+    function say(text, kind) {
+      clearTimeout(hide);
+      status.textContent = text;
+      status.className = "access-status" + (kind ? " access-status-" + kind : "");
+    }
+
+    function allOff() {
+      return Array.prototype.every.call(form.querySelectorAll("input[type=radio]:checked"), function (input) {
+        return input.value === "off";
+      });
+    }
+
+    function send() {
+      // Everything off removes the agent. That needs the Remove access button, so a tap never does it by mistake.
+      if (allOff()) {
+        say("Everything is off. To remove this agent, select Remove access.", "warn");
+        return;
+      }
+      say("Saving…");
+      var mine = (sent += 1);
+      fetch(form.action, {
+        method: "POST",
+        body: new URLSearchParams(new FormData(form)),
+        headers: { accept: "application/json" },
+        credentials: "same-origin",
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.json();
+        })
+        .then(function (result) {
+          if (mine !== sent) return;
+          if (!result.ok) throw new Error("not saved");
+          if (count) {
+            count.textContent =
+              result.tools === result.total ? "All " + result.total + " tools" : result.tools + " of " + result.total + " tools";
+          }
+          say("Saved", "ok");
+          hide = setTimeout(function () {
+            say("");
+          }, 1800);
+        })
+        .catch(function () {
+          if (mine !== sent) return;
+          say("Not saved. Check your connection and try again.", "warn");
+        });
+    }
+
+    form.addEventListener("change", function () {
+      clearTimeout(timer);
+      timer = setTimeout(send, 200);
+    });
+    form.addEventListener("submit", function (event) {
+      if (event.submitter && event.submitter.hasAttribute("formaction")) return;
+      event.preventDefault();
+      send();
+    });
+  });
 })();

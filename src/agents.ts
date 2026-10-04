@@ -3,7 +3,7 @@
  * agent calls the tools with its key over plain HTTP: GET /v1/tools and
  * POST /v1/tools/:name. Gulpy has no MCP server and no OAuth server for agents.
  */
-import { capabilitiesAt, levelOf, type AccessLevel } from "./capabilities.ts";
+import { capabilitiesAt, capabilitiesForAreas, levelOf, type AccessLevel, type AreaId } from "./capabilities.ts";
 import { randomId } from "./crypto.ts";
 import type { Deps } from "./deps.ts";
 import type { Connection } from "./store.ts";
@@ -59,4 +59,58 @@ export function shareWithAgents(deps: Deps, userId: string, connection: Connecti
       status: null,
     });
   }
+}
+
+/**
+ * The user changes the access of an agent on the dashboard. `levels` has, for each connection
+ * in the form, a level for each area (Gmail, Calendar, Drive, or the tools). A connection with
+ * every area off loses its grant. With no grant left, the agent loses access, as with Remove access.
+ * Returns false if the agent had no access.
+ */
+export function setAgentAccess(
+  deps: Deps,
+  appId: string,
+  userId: string,
+  levels: ReadonlyMap<string, ReadonlyMap<AreaId, AccessLevel | "off">>,
+): boolean {
+  const before = new Map(deps.store.grantsForAppUser(appId, userId).map((grant) => [grant.connectionId, grant]));
+  if (before.size === 0) return false;
+  const now = deps.now();
+  deps.store.db.transaction(() => {
+    for (const connection of deps.store.connectionsByUser(userId)) {
+      const areas = levels.get(connection.id);
+      const grant = before.get(connection.id);
+      if (!areas) continue;
+      const capabilities = capabilitiesForAreas(areas, connection.capabilities);
+      if ((grant?.capabilities ?? []).join() === capabilities.join()) continue;
+      // A connection that needs a new sign-in gets no new grant. It can still lose one.
+      if (!grant && capabilities.length > 0 && connection.status !== "active") continue;
+      if (capabilities.length === 0) {
+        deps.store.deleteGrantFor(appId, connection.id);
+      } else {
+        deps.store.upsertGrant({
+          id: grant?.id ?? randomId("grant"),
+          userId,
+          appId,
+          connectionId: connection.id,
+          capabilities,
+          createdAt: grant?.createdAt ?? now,
+          updatedAt: now,
+        });
+      }
+      deps.store.audit({
+        ts: now,
+        userId,
+        appId,
+        connectionId: connection.id,
+        action: capabilities.length === 0 ? "grant.remove" : "grant.approve",
+        detail: capabilities.length === 0 ? "Removed by the user" : capabilities.join(", "),
+        status: null,
+      });
+    }
+    if (deps.store.grantsForAppUser(appId, userId).length === 0) {
+      deps.store.revokeAccessTokensForAppUser(appId, userId, now);
+    }
+  })();
+  return true;
 }

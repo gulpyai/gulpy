@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import { backendOf, tokensFor } from "../access.ts";
-import { shareWithAgents } from "../agents.ts";
+import { setAgentAccess, shareWithAgents } from "../agents.ts";
 import {
   checkCsrf,
   endSession,
@@ -12,8 +12,21 @@ import {
   verifyCode,
   viewer,
 } from "../auth.ts";
-import { billingOn, checkoutUrl, completeCheckout, isInterval, isPlan, planOf, portalUrl } from "../billing.ts";
-import { BRAND, LEGAL } from "../brand.ts";
+import {
+  agentAllowed,
+  billingOn,
+  cancelPlan,
+  checkoutUrl,
+  completeCheckout,
+  FREE_AGENTS,
+  isForSale,
+  isInterval,
+  planOf,
+  portalUrl,
+  unlimited,
+} from "../billing.ts";
+import { BRAND, CONTACT, LEGAL } from "../brand.ts";
+import { AREAS, type AccessLevel, type AreaId } from "../capabilities.ts";
 import { isLocalAddress } from "../config.ts";
 import { randomId, randomToken, sha256 } from "../crypto.ts";
 import type { Deps } from "../deps.ts";
@@ -23,6 +36,7 @@ import { viewCatalog, viewConnection, viewConnections } from "../present.ts";
 import { beginUpstream, completeUpstream } from "../upstream/oauth.ts";
 import type { Vault } from "../vault.ts";
 import {
+  AgentLimit,
   DeviceConsent,
   DeviceDone,
   DeviceEnter,
@@ -67,7 +81,7 @@ const NOTICES: Record<string, string> = {
   nothing_selected: "Select one or more connections.",
   setup_needed: "This connector needs an app that the operator registers at the provider first.",
   payment_pending: "Gulpy could not confirm the payment yet. If you paid, the plan shows in a minute.",
-  no_plan: "That plan is not for sale yet.",
+  no_plan: "Pro is not for sale yet. It opens soon.",
 };
 
 /**
@@ -76,14 +90,7 @@ const NOTICES: Record<string, string> = {
  */
 const showCode = (deps: Deps): boolean => deps.config.env !== "production" && isLocalAddress(deps.config.baseUrl);
 
-const OK_NOTICES: Record<string, string> = {
-  connected: "The connection is added.",
-  removed: "The connection is removed. The tokens are deleted.",
-  revoked: "The agent does not have access now.",
-  paid: "Thank you. Your plan is active.",
-};
-
-function render(c: Context, page: Child, status: 200 | 400 | 403 | 404 = 200): Response {
+function render(c: Context, page: Child, status: 200 | 400 | 403 | 404 | 502 = 200): Response {
   return c.html(`<!DOCTYPE html>${String(page)}`, status);
 }
 
@@ -117,7 +124,10 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
   const expectedOrigin = new URL(deps.config.baseUrl).origin;
 
   app.use("*", async (c, next) => {
-    if (c.req.method !== "GET" && c.req.method !== "HEAD" && !sameOrigin(c, expectedOrigin)) {
+    // The start form on the marketing site asks for a code here. The code works only in the browser
+    // that asked for it, and a person types it on this site, so this form cannot sign anybody in.
+    const fromSite = c.req.path === "/auth/start" && c.req.header("origin") === deps.config.siteOrigin;
+    if (c.req.method !== "GET" && c.req.method !== "HEAD" && !fromSite && !sameOrigin(c, expectedOrigin)) {
       return c.text(`This request did not come from ${BRAND.name}`, 403);
     }
     await next();
@@ -240,6 +250,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     }
     const current = viewer(deps, c);
     if (!current) return render(c, <DeviceSignIn app={agent} state={{ next: `/device?code=${code}` }} />);
+    if (!agentAllowed(deps, current.user.id, agent.id)) return render(c, <AgentLimit name={agent.name} limit={FREE_AGENTS} />);
     const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
     return render(c, <DeviceConsent app={agent} code={code} viewer={current} logos={logos} />);
   });
@@ -259,6 +270,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       denyDevice(deps, code, current.user.id);
       return render(c, <DeviceDone name={agent.name} allowed={false} logos={[]} />);
     }
+    if (!agentAllowed(deps, current.user.id, agent.id)) return render(c, <AgentLimit name={agent.name} limit={FREE_AGENTS} />);
     if (allowDevice(deps, code, current.user.id)) await tellUser(deps, current.user.email, agent.name);
     const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
     return render(c, <DeviceDone name={agent.name} allowed logos={logos} />);
@@ -362,7 +374,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       const { connection, returnTo, created } = await complete(current.user.id);
       if (created) shareWithAgents(deps, current.user.id, connection);
       const next = safeNext(returnTo);
-      return c.redirect(next === "/" ? "/?ok=connected" : withParam(next, "connected", connection.id), 303);
+      return c.redirect(next === "/" ? "/" : withParam(next, "connected", connection.id), 303);
     } catch (error) {
       if (!(error instanceof OAuthError)) throw error;
       if (error.returnTo) return c.redirect(withParam(safeNext(error.returnTo), "notice", error.code), 303);
@@ -452,7 +464,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
           console.error("[gulpy] checkout session", error);
         }
       }
-      return c.redirect(done ? "/?ok=paid" : "/?notice=payment_pending", 303);
+      return c.redirect(done ? "/#account" : "/?notice=payment_pending", 303);
     }
 
     const connections = viewConnections(deps, current.user.id);
@@ -471,23 +483,29 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       agents.set(agent.id, entry);
     }
 
-    const okText = OK_NOTICES[c.req.query("ok") ?? ""];
     const warnText = NOTICES[c.req.query("notice") ?? ""];
     const model: DashboardModel = {
       connections,
-      catalog: viewCatalog(deps, current.user.id),
+      // The Connected list shows the tools that the user has. The catalog shows the others.
+      catalog: viewCatalog(deps, current.user.id, false, true)
+        .map((group) => ({ ...group, cards: group.cards.filter((card) => card.state !== "connected") }))
+        .filter((group) => group.cards.length > 0),
       agents: [...agents.values()],
-      activity: deps.store.auditByUser(current.user.id, 30).map((entry) => ({
-        entry,
-        appName: entry.appId ? (deps.store.appById(entry.appId)?.name ?? "Deleted agent") : null,
-        target: entry.connectionId ? (byId.get(entry.connectionId)?.name ?? entry.detail?.split(" · ")[0] ?? "Removed tool") : null,
-      })),
       baseUrl: deps.config.baseUrl,
-      local: /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(deps.config.baseUrl),
-      calls: deps.store.countCalls(current.user.id, now - 7 * 24 * 60 * 60_000),
       now,
-      notice: okText ? { kind: "ok", text: okText } : warnText ? { kind: "warn", text: warnText } : undefined,
+      // A change that worked shows on the page itself. Only a problem gets a line at the top.
+      notice: warnText ? { kind: "warn", text: warnText } : undefined,
       plan: billingOn(deps) ? planOf(deps, current.user.id) : undefined,
+      agentLimit: unlimited(deps, current.user.id) ? undefined : FREE_AGENTS,
+      activity: unlimited(deps, current.user.id)
+        ? deps.store.auditByUser(current.user.id, 50).map((entry) => ({
+            entry,
+            appName: entry.appId ? (deps.store.appById(entry.appId)?.name ?? "Deleted agent") : null,
+            target: entry.connectionId
+              ? (byId.get(entry.connectionId)?.name ?? entry.detail?.split(" · ")[0] ?? "Removed tool")
+              : null,
+          }))
+        : undefined,
     };
     return render(c, <Dashboard viewer={current} model={model} />);
   });
@@ -497,12 +515,17 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
   app.get("/billing/checkout", async (c) => {
     if (!billingOn(deps)) return c.text("Payments are not set up", 404);
     const plan = c.req.query("plan");
-    const interval = c.req.query("interval") ?? "yearly";
-    if (!isPlan(plan) || !isInterval(interval)) return c.text("Unknown plan", 400);
+    const interval = c.req.query("interval") ?? "monthly";
+    if (!isForSale(plan) || !isInterval(interval)) return c.text("Unknown plan", 400);
     const current = viewer(deps, c);
     if (!current) return c.redirect(withParam("/", "next", `/billing/checkout?plan=${plan}&interval=${interval}`), 303);
-    const url = await checkoutUrl(deps, current.user, plan, interval);
-    if (!url) return c.redirect("/?notice=no_plan", 303);
+    let url: string | null = null;
+    try {
+      url = await checkoutUrl(deps, current.user, plan, interval);
+    } catch (error) {
+      console.error("[gulpy] checkout link", error);
+    }
+    if (!url) return c.redirect("/?notice=no_plan#account", 303);
     return c.redirect(url, 303);
   });
 
@@ -537,7 +560,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
         status: null,
       });
     }
-    return c.redirect("/?ok=removed", 303);
+    return c.redirect("/", 303);
   });
 
   app.post("/apps/:id/revoke", async (c) => {
@@ -559,7 +582,32 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
         status: null,
       });
     }
-    return c.redirect("/?ok=revoked", 303);
+    return c.redirect("/#agents", 303);
+  });
+
+  // The Edit form of an agent on the dashboard: a level for each area of each connection.
+  // `level:<connection>:<area>`, or `level:<connection>` for all the areas of the connection.
+  // catalog.js sends the form in the background and asks for JSON, so the page stays.
+  app.post("/apps/:id/access", async (c) => {
+    const form = await c.req.parseBody();
+    const current = viewer(deps, c);
+    const json = (c.req.header("accept") ?? "").includes("application/json");
+    if (!current) return json ? c.json({ ok: false }, 401) : c.redirect("/", 303);
+    if (!checkCsrf(current, form.csrf)) return c.text("The form expired. Go back and try again.", 403);
+    const appId = c.req.param("id");
+    const levels = new Map<string, Map<AreaId, AccessLevel | "off">>();
+    for (const [key, value] of Object.entries(form)) {
+      const [prefix, connectionId, area] = key.split(":");
+      if (prefix !== "level" || !connectionId || (value !== "read" && value !== "write" && value !== "off")) continue;
+      const areas = levels.get(connectionId) ?? new Map<AreaId, AccessLevel | "off">();
+      for (const id of area ? AREAS.filter((one) => one === area) : AREAS) areas.set(id, value);
+      levels.set(connectionId, areas);
+    }
+    const changed = setAgentAccess(deps, appId, current.user.id, levels);
+    const left = deps.store.grantsForAppUser(appId, current.user.id).length;
+    const removed = changed && left === 0;
+    if (json) return c.json({ ok: changed, removed, tools: left, total: deps.store.connectionsByUser(current.user.id).length });
+    return c.redirect("/#agents", 303);
   });
 
   // The account: a copy of the data, and deletion
@@ -586,7 +634,18 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     if (normalizeEmail(String(form.confirm ?? "")) !== current.user.email) {
       return render(c, <DeleteAccount viewer={current} error="The email address is not the same. Type it again." />, 400);
     }
-    // Cancel each token at the provider first. A provider that does not answer does not stop the deletion.
+    // Stop the paid plan first, so a deleted account is never charged again. If Stripe does not answer, stop here.
+    if (!(await cancelPlan(deps, current.user.id))) {
+      return render(
+        c,
+        <DeleteAccount
+          viewer={current}
+          error={`${BRAND.name} could not cancel your paid plan. Nothing was deleted. Try again in a minute, or write to ${CONTACT.support}.`}
+        />,
+        502,
+      );
+    }
+    // Cancel each token at the provider. A provider that does not answer does not stop the deletion.
     for (const connection of deps.store.connectionsByUser(current.user.id)) {
       const backend = backendOf(deps, connection);
       if (!backend) continue;

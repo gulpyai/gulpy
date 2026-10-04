@@ -1,6 +1,6 @@
 import type { Child, FC, PropsWithChildren } from "hono/jsx";
 import type { Viewer } from "../auth.ts";
-import { BRAND, CONTACT } from "../brand.ts";
+import { BRAND, CONTACT, SITE_URL } from "../brand.ts";
 import { CAPABILITIES, type CapabilityId } from "../capabilities.ts";
 import type { LogoImage } from "../logos.ts";
 
@@ -75,7 +75,8 @@ export const Mascot: FC<{ size?: "small" | "medium" | "large" | "hero"; mood?: "
   </svg>
 );
 
-export const Brand: FC<{ href?: string }> = ({ href = "/" }) => (
+/** The logo goes to the first page of the marketing site. */
+export const Brand: FC<{ href?: string }> = ({ href = `${SITE_URL}/` }) => (
   <a class="brand" href={href}>
     <Mascot size="small" />
     {BRAND.name}
@@ -210,7 +211,6 @@ const SiteFoot: FC = () => (
         <h2>Product</h2>
         <a href="/">My tools</a>
         <a href="/#how">How it works</a>
-        <a href="/developers">Developers</a>
       </nav>
       <nav class="foot-group" aria-label="Help">
         <h2>Help</h2>
@@ -252,9 +252,6 @@ export const SitePage: FC<
           <nav class="site-nav">
             <a href="/" aria-current={current === "tools" ? "page" : undefined}>
               My tools
-            </a>
-            <a href="/developers" aria-current={current === "developers" ? "page" : undefined}>
-              Developers
             </a>
             <span class="site-user">{viewer.user.email}</span>
             <form method="post" action="/auth/signout">

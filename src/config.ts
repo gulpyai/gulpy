@@ -1,3 +1,4 @@
+import { SITE_URL } from "./brand.ts";
 import { randomBytes } from "node:crypto";
 import type { CustomConnector } from "./catalog.ts";
 
@@ -50,6 +51,11 @@ export interface Config {
    * False: the user approves each agent. Set `GULPY_AUTO_APPROVE=off` for false.
    */
   autoApprove: boolean;
+  /**
+   * The origin of the marketing site. Its start form sends the email address to /auth/start;
+   * no other form of a different site can. `GULPY_SITE_URL`, default https://gulpy.ai.
+   */
+  siteOrigin: string;
 }
 
 /** Connectors that need an OAuth app that the operator registers by hand. */
@@ -162,5 +168,6 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     connectorClients: overrides.connectorClients ?? connectorClients(env),
     stripe: overrides.stripe ?? stripeConfig(env),
     autoApprove: overrides.autoApprove ?? process.env.GULPY_AUTO_APPROVE !== "off",
+    siteOrigin: overrides.siteOrigin ?? new URL(SITE_URL).origin,
   };
 }

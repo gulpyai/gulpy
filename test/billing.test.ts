@@ -2,10 +2,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { createHmac } from "node:crypto";
-import { FREE_HISTORY_DAYS } from "../src/billing.ts";
+import { agentAllowed, FREE_AGENTS, FREE_HISTORY_DAYS } from "../src/billing.ts";
 import { LEGAL } from "../src/brand.ts";
 import { cleanUp } from "../src/cleanup.ts";
-import { createWorld, GULPY, type Browser, type World } from "./harness.ts";
+import { createWorld, field, GULPY, type Browser, type World } from "./harness.ts";
 
 const EMAIL = "skyler@example.com";
 const STRIPE = "https://api.stripe.com";
@@ -18,12 +18,21 @@ function createStripe() {
   const customers: Record<string, { id: string; email: string | null }> = {};
   const sessions: Record<string, unknown> = {};
   const portalRequests: Record<string, string>[] = [];
+  const canceled: string[] = [];
+  const failures = { cancel: false, gone: false };
   const app = new Hono();
+  app.delete("/v1/subscriptions/:id", (c) => {
+    if (failures.cancel) return c.json({ error: { message: "Stripe is down" } }, 500);
+    if (failures.gone) return c.json({ error: { message: "No such subscription" } }, 404);
+    canceled.push(c.req.param("id"));
+    return c.json({ id: c.req.param("id"), status: "canceled" });
+  });
   app.get("/v1/payment_links", (c) =>
     c.json({
       data: [
         { id: "plink_1", url: "https://buy.stripe.com/test_personal_yearly", active: true, metadata: { lookup_key: "personal_yearly" } },
         { id: "plink_2", url: "https://buy.stripe.com/test_business_monthly", active: true, metadata: { lookup_key: "business_monthly" } },
+        { id: "plink_3", url: "https://buy.stripe.com/test_pro_monthly", active: true, metadata: { lookup_key: "pro_monthly" } },
       ],
       has_more: false,
     }),
@@ -46,7 +55,7 @@ function createStripe() {
     portalRequests.push(form);
     return c.json({ url: "https://billing.stripe.com/p/session/test_portal" });
   });
-  return { app, subscriptions, customers, sessions, portalRequests };
+  return { app, subscriptions, customers, sessions, portalRequests, canceled, failures };
 }
 
 function subscription(fields: {
@@ -159,7 +168,7 @@ describe("the webhook", () => {
     expect(home.html).toContain("Plan: <strong>Personal</strong>");
     expect(home.html).toContain("Billed yearly");
     expect(home.html).toContain("Manage plan");
-    expect(home.html).toContain("changed the plan");
+    expect(JSON.stringify(world.gulpy.deps.store.db.query("SELECT action, detail FROM audit_log").all())).toContain("plan.change");
 
     const exported = await (await browser.open(`${GULPY}/account/export`)).html;
     expect(JSON.parse(exported).plan).toMatchObject({ plan: "personal", status: "active", users: 1 });
@@ -198,7 +207,6 @@ describe("the webhook", () => {
     await webhook({ type: "customer.subscription.deleted", data: { object: subscription({ status: "canceled" }) } });
     const home = await browser.open(`${GULPY}/`);
     expect(home.html).toContain("Plan: <strong>Free</strong>");
-    expect(home.html).toContain("See the plans");
     expect(home.html).toContain("Invoices");
     expect(world.gulpy.deps.store.subscription(userId())?.status).toBe("canceled");
   });
@@ -220,32 +228,35 @@ describe("the webhook", () => {
 describe("checkout and the portal", () => {
   test("a signed-in person goes to the payment link with the user id and the email", async () => {
     await browser.signIn(world, EMAIL);
-    const response = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=personal&interval=yearly`, {
+    const response = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=pro&interval=monthly`, {
       headers: { cookie: await cookie() },
     });
     expect(response.status).toBe(303);
     const target = new URL(response.headers.get("location") ?? "");
-    expect(target.origin + target.pathname).toBe("https://buy.stripe.com/test_personal_yearly");
+    expect(target.origin + target.pathname).toBe("https://buy.stripe.com/test_pro_monthly");
     expect(target.searchParams.get("client_reference_id")).toBe(userId());
     expect(target.searchParams.get("prefilled_email")).toBe(EMAIL);
   });
 
   test("a signed-out person sees the sign-in page and lands on the checkout after it", async () => {
-    const page = await browser.open(`${GULPY}/billing/checkout?plan=business&interval=monthly`);
+    const page = await browser.open(`${GULPY}/billing/checkout?plan=pro&interval=monthly`);
     expect(page.status).toBe(200);
-    expect(page.html).toContain('name="next" value="/billing/checkout?plan=business&amp;interval=monthly"');
-    const after = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=business&interval=monthly`, {
-      headers: { cookie: await cookie("/billing/checkout?plan=business&interval=monthly") },
+    expect(page.html).toContain('name="next" value="/billing/checkout?plan=pro&amp;interval=monthly"');
+    const after = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=pro&interval=monthly`, {
+      headers: { cookie: await cookie("/billing/checkout?plan=pro&interval=monthly") },
     });
-    expect(after.headers.get("location")).toStartWith("https://buy.stripe.com/test_business_monthly?");
+    expect(after.headers.get("location")).toStartWith("https://buy.stripe.com/test_pro_monthly?");
   });
 
   test("a plan with no payment link, and a plan that does not exist", async () => {
     await browser.signIn(world, EMAIL);
-    const missing = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=family&interval=yearly`, { headers: { cookie: await cookie() } });
-    expect(missing.headers.get("location")).toBe("/?notice=no_plan");
+    const missing = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=pro&interval=yearly`, { headers: { cookie: await cookie() } });
+    expect(missing.headers.get("location")).toBe("/?notice=no_plan#account");
     const unknown = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=gold`, { headers: { cookie: await cookie() } });
     expect(unknown.status).toBe(400);
+    // The older plans are not for sale.
+    const old = await world.gulpy.app.request(`${GULPY}/billing/checkout?plan=personal`, { headers: { cookie: await cookie() } });
+    expect(old.status).toBe(400);
   });
 
   test("the portal opens for the customer of the person, with the way back", async () => {
@@ -284,8 +295,7 @@ describe("checkout and the portal", () => {
       subscription: subscription({ plan: "family" }),
     };
     const page = await browser.open(`${GULPY}/?checkout=cs_done`);
-    expect(page.url).toBe(`${GULPY}/?ok=paid`);
-    expect(page.html).toContain("Thank you. Your plan is active.");
+    expect(page.url).toBe(`${GULPY}/#account`);
     expect(page.html).toContain("Plan: <strong>Family</strong>");
 
     // The session of a different person, or a session that is not paid, changes nothing.
@@ -298,7 +308,106 @@ describe("checkout and the portal", () => {
   });
 });
 
+describe("deleting the account", () => {
+  async function deleteAccount() {
+    const page = await browser.open(`${GULPY}/account/delete`);
+    return browser.open(`${GULPY}/account/delete`, { form: { csrf: field(page.html, "csrf"), confirm: EMAIL }, from: page.url });
+  }
+
+  test("cancels the paid plan at Stripe first, so the person is not charged again", async () => {
+    await browser.signIn(world, EMAIL);
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({ plan: "pro", interval: "month" }) } });
+    const id = userId();
+    await deleteAccount();
+    expect(stripe.canceled).toEqual(["sub_1"]);
+    expect(world.gulpy.deps.store.userById(id)).toBeNull();
+  });
+
+  test("deletes the account when Stripe has no such plan any more", async () => {
+    await browser.signIn(world, EMAIL);
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({ plan: "pro", interval: "month" }) } });
+    stripe.failures.gone = true;
+    const id = userId();
+    await deleteAccount();
+    expect(world.gulpy.deps.store.userById(id)).toBeNull();
+  });
+
+  test("keeps the account when Stripe cannot cancel the plan", async () => {
+    await browser.signIn(world, EMAIL);
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({ plan: "pro", interval: "month" }) } });
+    stripe.failures.cancel = true;
+    const page = await deleteAccount();
+    expect(page.html).toContain("could not cancel your paid plan");
+    expect(world.gulpy.deps.store.userByEmail(EMAIL)).not.toBeNull();
+  });
+});
+
 describe("what a plan changes", () => {
+  /** An agent that the person approved: it has a grant on a tool of the person. */
+  function approvedAgent(name: string): string {
+    const store = world.gulpy.deps.store;
+    const now = world.gulpy.deps.now();
+    const id = `app_${name}`;
+    store.createApp({ id, ownerUserId: null, name, clientId: id, clientSecretHash: "", origins: [], kind: "agent", createdAt: now });
+    let connection = store.connectionsByUser(userId())[0];
+    if (!connection) {
+      store.insertConnection({
+        id: "conn_1", userId: userId(), provider: "notion", accountId: "a", accountLabel: "Notion", capabilities: ["tools.read"],
+        scopes: [], accessTokenEnc: "x", refreshTokenEnc: null, expiresAt: null, status: "active", tools: null, createdAt: now, updatedAt: now,
+      });
+      connection = store.connectionsByUser(userId())[0]!;
+    }
+    store.upsertGrant({ id: `grant_${name}`, userId: userId(), appId: id, connectionId: connection.id, capabilities: ["tools.read"], createdAt: now, updatedAt: now });
+    return id;
+  }
+
+  test(`Free has ${FREE_AGENTS} agents; an agent approved before can sign in again; Pro has no limit`, async () => {
+    await browser.signIn(world, EMAIL);
+    const deps = world.gulpy.deps;
+    const first = approvedAgent("One");
+    approvedAgent("Two");
+    expect(agentAllowed(deps, userId(), "app_Three")).toBe(true);
+    approvedAgent("Three");
+    expect(agentAllowed(deps, userId(), "app_Four")).toBe(false);
+    expect(agentAllowed(deps, userId(), first)).toBe(true);
+    // A new sign-in of an agent that the person has (a new app with the same name) is not a new agent.
+    deps.store.createApp({ id: "app_two_again", ownerUserId: null, name: "Two", clientId: "app_two_again", clientSecretHash: "", origins: [], kind: "agent", createdAt: deps.now() });
+    expect(agentAllowed(deps, userId(), "app_two_again")).toBe(true);
+    const home = await browser.open(`${GULPY}/`);
+    expect(home.html).toContain(`3 of ${FREE_AGENTS} agents`);
+    expect(home.html).toContain("Upgrade to Pro");
+    expect(home.html).not.toContain('data-tab-link="activity"');
+
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({ plan: "pro", interval: "month" }) } });
+    expect(agentAllowed(deps, userId(), "app_Four")).toBe(true);
+    const pro = await browser.open(`${GULPY}/`);
+    expect(pro.html).toContain("Plan: <strong>Pro</strong>");
+    expect(pro.html).not.toContain("Upgrade to Pro");
+    expect(pro.html).toContain('data-tab-link="activity"');
+  });
+
+  test("the approval page of a fourth agent on Free offers Pro", async () => {
+    await browser.signIn(world, EMAIL);
+    for (const name of ["One", "Two", "Three"]) approvedAgent(name);
+    const store = world.gulpy.deps.store;
+    const now = world.gulpy.deps.now();
+    store.createApp({ id: "app_Four", ownerUserId: null, name: "Four", clientId: "app_Four", clientSecretHash: "", origins: [], kind: "agent", createdAt: now });
+    const code = "FourthAgentCode1";
+    store.createDeviceCode("hash_four", code, "app_Four", now, now + 10 * 60_000);
+
+    const page = await browser.open(`${GULPY}/device?code=${code}`);
+    expect(page.html).toContain(`Free has ${FREE_AGENTS} agents`);
+    expect(page.html).toContain("/billing/checkout?plan=pro");
+    // The form of an older page cannot go around the limit.
+    const home = await browser.open(`${GULPY}/`);
+    await browser.open(`${GULPY}/device`, { form: { csrf: field(home.html, "csrf"), code, decision: "allow" }, from: `${GULPY}/device?code=${code}` });
+    expect(store.grantsForAppUser("app_Four", userId())).toHaveLength(0);
+  });
+
   test(`Free keeps ${FREE_HISTORY_DAYS} days of calls; a paid plan keeps ${LEGAL.callLogDays} days`, async () => {
     await browser.signIn(world, EMAIL);
     const { store } = world.gulpy.deps;

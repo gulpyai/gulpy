@@ -73,3 +73,44 @@ export function capabilitiesAt(level: AccessLevel, held: readonly CapabilityId[]
 export function levelOf(capabilities: readonly CapabilityId[]): AccessLevel {
   return capabilities.some((capability) => CAPABILITIES[capability].write) ? "write" : "read";
 }
+
+/**
+ * The parts of a connection that the user turns on or off for each agent: the email, the calendar,
+ * the files of a Google or Microsoft account, or the tools of an MCP server. The id of an area is
+ * the start of the id of its capabilities.
+ */
+export type AreaId = "email" | "calendar" | "files" | "tools";
+
+export const AREAS: readonly AreaId[] = ["email", "calendar", "files", "tools"];
+
+export function areaOf(capability: CapabilityId): AreaId {
+  return capability.split(".")[0] as AreaId;
+}
+
+/** The areas that a connection has, in a fixed order. */
+export function areasOf(held: readonly CapabilityId[]): AreaId[] {
+  return AREAS.filter((area) => held.some((capability) => areaOf(capability) === area));
+}
+
+/** True if the area of this connection has a capability that changes data. */
+export function areaWrites(area: AreaId, held: readonly CapabilityId[]): boolean {
+  return held.some((capability) => areaOf(capability) === area && CAPABILITIES[capability].write);
+}
+
+/** What an agent can do in one area: nothing, read, or read and write. */
+export function areaLevel(area: AreaId, capabilities: readonly CapabilityId[]): AccessLevel | "off" {
+  const mine = capabilities.filter((capability) => areaOf(capability) === area);
+  if (mine.length === 0) return "off";
+  return levelOf(mine);
+}
+
+/** The capabilities of a connection for a level in each area. An area with no level is off. */
+export function capabilitiesForAreas(
+  levels: ReadonlyMap<AreaId, AccessLevel | "off">,
+  held: readonly CapabilityId[],
+): CapabilityId[] {
+  return held.filter((capability) => {
+    const level = levels.get(areaOf(capability)) ?? "off";
+    return level === "write" || (level === "read" && !CAPABILITIES[capability].write);
+  });
+}

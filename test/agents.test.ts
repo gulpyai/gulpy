@@ -38,7 +38,6 @@ describe("connectors", () => {
     expect(consent.html).toContain("Gulpy wants access to your Acme Notes account");
 
     const done = await addConnector(browser, "acme-notes");
-    expect(done.html).toContain("The connection is added.");
     expect(done.html).toContain("alice@acme.test");
     expect(done.html).toContain("alice@acme.test · 3 tools");
     // The second user of the connector uses the registration that Gulpy has.
@@ -191,7 +190,69 @@ describe("an agent with a key", () => {
     expect((await claude.toolNames()).some((name) => name.startsWith("acme_tasks"))).toBe(false);
   });
 
-  test("the dashboard shows each tool call, and not the content", async () => {
+  test("a person cannot change the access of an agent of a different person", async () => {
+    const orbit = new TestAgent(world, "Orbit");
+    await orbit.connect(browser);
+    const store = world.gulpy.deps.store;
+    const appId = (store.db.query("SELECT id FROM apps WHERE name = 'Orbit'").get() as { id: string }).id;
+    const before = JSON.stringify(store.db.query("SELECT * FROM grants ORDER BY id").all());
+    const other = world.browser();
+    await other.signIn(world, "other@example.com");
+    const page = await other.open(`${GULPY}/`);
+    const connection = (store.db.query("SELECT connection_id FROM grants WHERE app_id = ?").get(appId) as { connection_id: string }).connection_id;
+    await other.open(`${GULPY}/apps/${appId}/access`, { form: { csrf: field(page.html, "csrf"), [`level:${connection}`]: "off" }, from: page.url });
+    expect(JSON.stringify(store.db.query("SELECT * FROM grants ORDER BY id").all())).toBe(before);
+  });
+
+  test("the user gives an agent Google Calendar with edits, Drive read only, and no Gmail", async () => {
+    const orbit = new TestAgent(world, "Orbit");
+    await orbit.connect(browser);
+    const store = world.gulpy.deps.store;
+    const appId = (store.db.query("SELECT id FROM apps WHERE name = 'Orbit'").get() as { id: string }).id;
+    const user = store.userByEmail(EMAIL)!;
+    const now = world.gulpy.deps.now();
+    store.insertConnection({
+      id: "conn_google", userId: user.id, provider: "google", accountId: "g", accountLabel: "me@gmail.com",
+      capabilities: ["email.read", "email.send", "calendar.read", "calendar.write", "files.read"], scopes: [],
+      accessTokenEnc: "x", refreshTokenEnc: null, expiresAt: null, status: "active", tools: null, createdAt: now, updatedAt: now,
+    });
+    store.upsertGrant({
+      id: "grant_google", userId: user.id, appId, connectionId: "conn_google",
+      capabilities: ["email.read", "email.send", "calendar.read", "calendar.write", "files.read"], createdAt: now, updatedAt: now,
+    });
+
+    const dashboard = await browser.open(`${GULPY}/`);
+    await browser.open(`${GULPY}/apps/${appId}/access`, {
+      form: {
+        csrf: field(dashboard.html, "csrf"),
+        "level:conn_google:email": "off",
+        "level:conn_google:calendar": "write",
+        "level:conn_google:files": "read",
+      },
+      from: dashboard.url,
+    });
+    expect(store.grant(appId, "conn_google")?.capabilities).toEqual(["calendar.read", "calendar.write", "files.read"]);
+  });
+
+  test("the user edits the access of an agent. The change applies to the next call", async () => {
+    const orbit = new TestAgent(world, "Orbit");
+    await orbit.connect(browser);
+    const store = world.gulpy.deps.store;
+    const appId = (store.db.query("SELECT id FROM apps WHERE name = 'Orbit'").get() as { id: string }).id;
+    const grants = () => store.db.query("SELECT connection_id, capabilities FROM grants WHERE app_id = ?").all(appId) as { connection_id: string; capabilities: string }[];
+    const [first] = grants();
+
+    const dashboard = await browser.open(`${GULPY}/`);
+    const csrf = field(dashboard.html, "csrf");
+    await browser.open(`${GULPY}/apps/${appId}/access`, { form: { csrf, [`level:${first!.connection_id}`]: "read" }, from: dashboard.url });
+    expect(JSON.parse(grants()[0]!.capabilities)).not.toContain("tools.write");
+
+    const off = Object.fromEntries(grants().map((grant) => [`level:${grant.connection_id}`, "off"]));
+    await browser.open(`${GULPY}/apps/${appId}/access`, { form: { csrf, ...off }, from: dashboard.url });
+    expect(grants()).toHaveLength(0);
+  });
+
+  test("the log records each tool call, and not the content", async () => {
     const orbit = new TestAgent(world, "Orbit");
     await orbit.connect(browser);
     await orbit.call("acme_notes_search_notes", { query: "private words" });

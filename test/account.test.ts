@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { backUp } from "../src/backup.ts";
 import { LEGAL } from "../src/brand.ts";
 import { cleanUp } from "../src/cleanup.ts";
-import { connectFirstTime, createWorld, field, GULPY, type Browser, type TestApp, type World } from "./harness.ts";
+import { connectFirstTime, createWorld, field, GULPY, SITE, type Browser, type TestApp, type World } from "./harness.ts";
 
 const EMAIL = "skyler@example.com";
 const DAY = 24 * 60 * 60_000;
@@ -51,6 +51,31 @@ async function sessionCookie(): Promise<string> {
   );
   return verify.headers.getSetCookie().find((line) => line.startsWith("gulpy_session=")) ?? "";
 }
+
+describe("the start form of the marketing site", () => {
+  const post = (path: string, origin: string, form: Record<string, string>, cookie = "") =>
+    world.gulpy.app.request(`${GULPY}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin, "sec-fetch-site": "same-site", ...(cookie ? { cookie } : {}) },
+      body: new URLSearchParams(form).toString(),
+    });
+
+  test("sends a code, and the code page opens here", async () => {
+    const start = await post("/auth/start", SITE, { email: EMAIL, next: "/" });
+    expect(start.status).toBe(200);
+    expect(await start.text()).toContain('name="otp_id"');
+    expect(world.mailer.peek(EMAIL)).toBeTruthy();
+  });
+
+  test("cannot send the code form, and no other site can ask for a code", async () => {
+    const start = await post("/auth/start", SITE, { email: EMAIL, next: "/" });
+    const binding = start.headers.getSetCookie().find((line) => line.startsWith("gulpy_signin="))?.split(";")[0] ?? "";
+    const html = await start.text();
+    const verify = await post("/auth/verify", SITE, { email: EMAIL, next: "/", otp_id: field(html, "otp_id"), code: world.mailer.peek(EMAIL) ?? "" }, binding);
+    expect(verify.status).toBe(403);
+    expect((await post("/auth/start", "https://evil.example", { email: EMAIL, next: "/" })).status).toBe(403);
+  });
+});
 
 describe("consent and the sign-in cookie", () => {
   test("the sign-in form says that Continue means consent, with links to the rules", async () => {
