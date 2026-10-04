@@ -47,7 +47,7 @@ jobs:
       GCP_PROJECT: ${{ vars.GCP_PROJECT }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
