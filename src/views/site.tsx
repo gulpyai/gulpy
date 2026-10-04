@@ -20,7 +20,7 @@ export interface LandingModel {
 
 /** The three steps of the diagram in "How it works". hero.js shows them one at a time as the page scrolls. */
 /** The steps of "How it works". hero.js has one camera view for each step, in the same order, then a view of all. */
-const FLOW = ["Connect your tools", `Add ${BRAND.name} to your AI`, "Choose what each AI can use"] as const;
+const FLOW = ["Connect your tools", "Give your AI one key", "It calls your tools with plain HTTP"] as const;
 
 /** Each sentence here must stay true of the code. See the Security page. */
 const PROMISES = [
@@ -32,12 +32,12 @@ const PROMISES = [
   {
     icon: "shield",
     title: "Your AI never sees a token",
-    text: `It gets tools only. ${BRAND.name} checks your approval on each call.`,
+    text: `It gets tools only. ${BRAND.name} makes each call for it.`,
   },
   {
     icon: "edit",
-    title: "Read only, or read and write",
-    text: "You choose for each tool and for each AI app.",
+    title: "One key for each AI",
+    text: `${BRAND.name} keeps only a hash of the key. Each AI gets its own key.`,
   },
   {
     icon: "eye",
@@ -47,7 +47,7 @@ const PROMISES = [
   {
     icon: "close",
     title: "Remove access in one tap",
-    text: "Remove an app and its access stops immediately.",
+    text: "Remove an AI and its key stops immediately.",
   },
   {
     icon: "key",
@@ -90,8 +90,8 @@ export const Landing: FC<{ model: LandingModel }> = ({ model }) => {
           <div class="hero-copy">
             <h1>{BRAND.promise}</h1>
             <p class="lede">
-              ChatGPT, Claude and Grok each make you connect the same tools again. Connect them to {BRAND.name} one
-              time. Then each new agent gets them with one tap.
+              Each AI makes you connect the same tools again. Connect them to {BRAND.name} one time. Then paste one
+              key into any agent, and it calls your tools with plain HTTP.
             </p>
             <div class="signin-card" id="start">
               <h2>{state.otpId ? "Check your email" : "Start free"}</h2>
@@ -163,14 +163,14 @@ export const Landing: FC<{ model: LandingModel }> = ({ model }) => {
                   <div class="flow-group">
                     <p class="flow-cap">Your AI</p>
                     <ul class="flow-agents" data-flow-agents>
-                      {DIAGRAM_AGENTS.map((agent, row) => (
+                      {DIAGRAM_AGENTS.map((agent) => (
                         <li>
                           <span class="flow-agent" title={agent.name}>
                             <Avatar label={agent.name} image={logoImage(agent.logo)} />
                           </span>
                           <span class="flow-perm">
-                            {logos.slice(0, 4).map((logo, index) => (
-                              <span class={(row + index) % 3 === 2 ? "flow-pick is-off" : "flow-pick"}>
+                            {logos.slice(0, 4).map((logo) => (
+                              <span class="flow-pick">
                                 <ConnectorIcon logo={logo} small />
                               </span>
                             ))}
@@ -252,13 +252,21 @@ export interface DashboardModel {
     appName: string | null;
     target: string | null;
   }[];
-  /** The address that the user gives to an agent. */
-  mcpUrl: string;
+  /** The address of Gulpy. Agents call `${baseUrl}/v1`. */
+  baseUrl: string;
   /** True if only this computer can reach the address. */
   local: boolean;
   calls: number;
   now: number;
   notice?: { kind: "ok" | "warn"; text: string };
+  /** The key that the user made just now. The page shows it one time. */
+  created?: NewKey;
+}
+
+export interface NewKey {
+  name: string;
+  /** The message that the user pastes into the agent. It has the key. */
+  prompt: string;
 }
 
 const ACTIONS: Record<string, string> = {
@@ -267,6 +275,8 @@ const ACTIONS: Record<string, string> = {
   "connection.remove": "Removed a tool",
   "grant.approve": "Approved access",
   "grant.remove": "Removed access",
+  "key.create": "Made a key",
+  "key.remove": "Removed a key",
   "email.read": "Read email",
   "email.send": "Sent email",
   "calendar.read": "Read calendar",
@@ -277,81 +287,66 @@ const ACTIONS: Record<string, string> = {
 
 const Hidden: FC<{ viewer: Viewer }> = ({ viewer }) => <input type="hidden" name="csrf" value={viewer.csrf} />;
 
-const GUIDES = [
-  {
-    id: "claude",
-    name: "Claude",
-    logo: "claude",
-    steps: [
-      "Open Customize, then Connectors.",
-      'Select "+", then "Add custom connector".',
-      "Paste the address. Select Add, then Connect.",
-    ],
-  },
-  {
-    id: "chatgpt",
-    name: "ChatGPT",
-    logo: "chatgpt",
-    steps: [
-      "Open Settings, then Security and login. Turn on Developer mode.",
-      "Select the plus button and create an app for a remote MCP server.",
-      "Paste the address and sign in.",
-    ],
-  },
-  {
-    id: "grok",
-    name: "Grok",
-    logo: "grok",
-    steps: ["Open grok.com/connectors.", "Select New Connector, then Custom.", "Paste the address and sign in."],
-  },
-] as const;
-
-const Guide: FC<{ model: DashboardModel }> = ({ model }) => (
-  <section class="panel guide">
-    <div class="guide-main">
-      <div>
-        <h2>
-          {model.connections.length > 0 ? `Add ${BRAND.name} to an agent` : `Step 2. Add ${BRAND.name} to an agent`}
-        </h2>
-        <p class="muted">Paste this address into the agent. The agent opens {BRAND.name}, and you tap Allow.</p>
+const Guide: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewer, model }) => {
+  const curl = `curl ${model.baseUrl}/v1/tools -H "Authorization: Bearer $GULPY_KEY"`;
+  const call = `curl -X POST ${model.baseUrl}/v1/tools/email_search \\\n  -H "Authorization: Bearer $GULPY_KEY" \\\n  -d '{"query": "invoice"}'`;
+  return (
+    <section class="panel guide" id="connect">
+      <div class="guide-main">
+        {model.created ? (
+          <>
+            <div>
+              <h2>Paste this into {model.created.name}</h2>
+              <p class="muted">
+                The agent saves the key and reads the guide. {BRAND.name} shows this key one time only.
+              </p>
+            </div>
+            <pre class="prompt" data-copy-text>
+              {model.created.prompt}
+            </pre>
+            <div>
+              <button class="copy" type="button" data-copy aria-label="Copy the message">
+                <Icon name="copy" />
+                <span data-copy-label>Copy</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <h2>{model.connections.length > 0 ? "Connect an agent" : "Step 2. Connect an agent"}</h2>
+              <p class="muted">
+                {BRAND.name} makes a key. You paste one message into any agent: ChatGPT, Claude, Codex or your own
+                script. The agent saves the key and calls your tools with plain HTTP.
+              </p>
+            </div>
+            <form method="post" action="/keys" class="key-form">
+              <Hidden viewer={viewer} />
+              <input class="key-name" name="name" maxlength={60} placeholder="Agent name, for example Claude" aria-label="Agent name" />
+              <button class="copy" type="submit">
+                Make a key
+              </button>
+            </form>
+          </>
+        )}
+        {model.local && (
+          <p class="guide-note">
+            This address works on this computer only. An agent in the cloud needs a public address.
+          </p>
+        )}
       </div>
-      <div class="address">
-        <code data-copy-text>{model.mcpUrl}</code>
-        <button class="copy" type="button" data-copy aria-label="Copy the address">
-          <Icon name="copy" />
-          <span data-copy-label>Copy</span>
-        </button>
-      </div>
-      {model.local && (
-        <p class="guide-note">
-          This address works on this computer only. ChatGPT, Claude and Grok need a public address.
+      <div class="guide-steps">
+        <p class="guide-label">List your tools</p>
+        <pre class="command">{curl}</pre>
+        <p class="guide-label">Call one</p>
+        <pre class="command">{call}</pre>
+        <p class="guide-label">
+          The full guide for agents: <a href="/agents.md">{model.baseUrl}/agents.md</a>
         </p>
-      )}
-    </div>
-    <div class="guide-steps">
-      {GUIDES.map((guide) => (
-        <details name="guide" open={guide.id === "claude"}>
-          <summary>
-            <Avatar label={guide.name} image={logoImage(guide.logo)} />
-            {guide.name}
-          </summary>
-          <ol>
-            {guide.steps.map((step) => (
-              <li>{step}</li>
-            ))}
-          </ol>
-        </details>
-      ))}
-      <details name="guide">
-        <summary>
-          <Avatar label="Claude Code" image={logoImage("claude")} />
-          Claude Code
-        </summary>
-        <pre class="command">claude mcp add --transport http gulpy {model.mcpUrl}</pre>
-      </details>
-    </div>
-  </section>
-);
+      </div>
+    </section>
+  );
+};
 
 const ConnectionRow: FC<{ view: ConnectionView; viewer: Viewer }> = ({ view, viewer }) => {
   const { connection } = view;
@@ -402,7 +397,7 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
       <section class="summary">
         <div class="summary-title">
           <h1>My tools</h1>
-          <p class="muted">Connect a tool one time. Approve each agent with one tap.</p>
+          <p class="muted">Connect a tool one time. Give any agent a key.</p>
         </div>
         <ul class="stats">
           <li>
@@ -420,7 +415,7 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
         </ul>
       </section>
 
-      {model.connections.length > 0 && <Guide model={model} />}
+      {(model.connections.length > 0 || model.created) && <Guide viewer={viewer} model={model} />}
 
       {model.connections.length > 0 && (
         <section class="panel">
@@ -447,17 +442,17 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
         </div>
       </section>
 
-      {model.connections.length === 0 && <Guide model={model} />}
+      {model.connections.length === 0 && !model.created && <Guide viewer={viewer} model={model} />}
 
       <section class="panel" id="agents">
         <div class="panel-head">
           <div>
             <h2>Agents</h2>
-            <p>Each agent can use only what you approved.</p>
+            <p>An agent with a key can use each of your tools. Remove the agent to stop its key.</p>
           </div>
         </div>
         {model.agents.length === 0 ? (
-          <p class="panel-empty">No agent has access yet. Add {BRAND.name} to an agent with the address above.</p>
+          <p class="panel-empty">No agent has a key yet. Make one above.</p>
         ) : (
           <ul class="rows">
             {model.agents.map(({ app, shares, lastUsed }) => (
@@ -508,6 +503,8 @@ export const Dashboard: FC<{ viewer: Viewer; model: DashboardModel }> = ({ viewe
                   <strong>{appName ?? "You"}</strong> {(ACTIONS[entry.action] ?? entry.action).toLowerCase()}
                   {(entry.action === "proxy" || entry.action === "tool") && entry.detail ? (
                     <code>{entry.detail}</code>
+                  ) : entry.action.startsWith("key.") && entry.detail ? (
+                    <span>· {entry.detail}</span>
                   ) : target ? (
                     <span>
                       · {target}
@@ -630,8 +627,8 @@ export const Developers: FC<{
         <div class="summary-title">
           <h1>Developers</h1>
           <p class="muted">
-            An agent that supports MCP needs no registration: give it <code>{baseUrl}/mcp</code>. Register an app here
-            only to open {BRAND.name} from your own page.
+            An agent needs no registration: make a key on the dashboard. Register an app here only to open{" "}
+            {BRAND.name} from your own page.
           </p>
         </div>
       </section>

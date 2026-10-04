@@ -7,7 +7,7 @@ import { Icon, SitePage, type PageMeta } from "./ui.tsx";
 export interface InfoModel {
   viewer: Viewer | null;
   /** The address that a person pastes into an agent. */
-  mcpUrl: string;
+  baseUrl: string;
   /** For search engines and link previews. Not set on a computer of a developer. */
   meta?: (path: string, description: string) => PageMeta | undefined;
 }
@@ -51,9 +51,9 @@ const QUESTIONS: { q: string; a: Child }[] = [
     q: `How do I add ${BRAND.name} to an agent?`,
     a: (
       <>
-        Open the connector settings of the agent and add a custom connector. Paste the {BRAND.name} address. The agent
-        opens {BRAND.name}, and you select <strong>Allow</strong>. The page <a href="/">My tools</a> has the steps for
-        Claude, ChatGPT, Grok and Claude Code.
+        Open <a href="/#connect">My tools</a>, type a name for the agent and select <strong>Make a key</strong>. Copy the
+        message and paste it into the agent. The agent saves the key and calls your tools with plain HTTP. This works
+        with any agent that can make a web request: ChatGPT, Claude, Codex or your own script.
       </>
     ),
   },
@@ -61,7 +61,7 @@ const QUESTIONS: { q: string; a: Child }[] = [
     q: "How do I stop the access of an agent?",
     a: (
       <>
-        Open <a href="/#agents">My tools, then Agents</a>. Select <strong>Remove access</strong> for the agent. The access
+        Open <a href="/#agents">My tools, then Agents</a>. Select <strong>Remove access</strong> for the agent. Its key
         stops immediately.
       </>
     ),
@@ -79,8 +79,8 @@ const QUESTIONS: { q: string; a: Child }[] = [
     q: "Can an agent change my data?",
     a: (
       <>
-        Only if you permit it. For each tool and each agent you select <strong>Read only</strong> or{" "}
-        <strong>Read and write</strong>. With Read only, the agent gets only the functions that do not change data.
+        Yes. An agent with a key can use each function of your tools, also the functions that change data. Give a key
+        only to an agent that you trust. You see each call on <a href="/#activity">My tools</a>.
       </>
     ),
   },
@@ -131,10 +131,13 @@ export const Support: FC<{ model: InfoModel }> = ({ model }) => (
     </section>
 
     <section class="info-section">
-      <h2>Your {BRAND.name} address</h2>
-      <p>Paste this address into an agent to add {BRAND.name}.</p>
+      <h2>Connect an agent</h2>
       <p>
-        <code class="info-code">{model.mcpUrl}</code>
+        Make a key on My tools and paste the message into the agent. The agent reads this guide and calls your tools
+        with plain HTTP:
+      </p>
+      <p>
+        <code class="info-code">{model.baseUrl}/agents.md</code>
       </p>
     </section>
 
@@ -192,7 +195,7 @@ export const Security: FC<{ model: InfoModel }> = ({ model }) => (
           <strong>You sign in at the provider.</strong> {BRAND.name} does not see or keep the password of a tool.
         </li>
         <li>
-          <strong>You approve each agent.</strong> You select the tools, and Read only or Read and write.
+          <strong>Each agent has its own key.</strong> {BRAND.name} keeps only a hash of it and shows the key one time.
         </li>
         <li>
           <strong>You see each call.</strong> The list shows the agent, the tool and the time. It does not keep the
@@ -202,7 +205,7 @@ export const Security: FC<{ model: InfoModel }> = ({ model }) => (
           <strong>You can stop access immediately.</strong> Remove an agent or a tool on the page My tools.
         </li>
         <li>
-          <strong>Agents use standard sign-in.</strong> OAuth 2.1 with PKCE. Access tokens stop working after 1 hour.
+          <strong>A key works until you remove it.</strong> Remove the agent on My tools and its key stops at once.
         </li>
       </ul>
     </section>

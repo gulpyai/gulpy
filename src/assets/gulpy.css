@@ -1508,7 +1508,7 @@ code,
   color: var(--muted);
 }
 
-/* The address for an agent */
+/* The key for an agent */
 
 .guide {
   display: grid;
@@ -1650,6 +1650,59 @@ code,
   font: 12.5px/1.5 var(--mono);
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.guide-label {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #c9ccd1;
+}
+
+.guide-label a {
+  color: var(--lime);
+  word-break: break-all;
+}
+
+.prompt {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #24262a;
+  color: #f1f2f4;
+  font: 13px/1.55 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: all;
+}
+
+.key-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 6px 6px 16px;
+  border-radius: 999px;
+  background: #24262a;
+}
+
+.key-name {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.key-name::placeholder {
+  color: #8b9097;
+}
+
+.key-form:focus-within {
+  box-shadow: 0 0 0 2px var(--lime);
 }
 
 .secret-box {

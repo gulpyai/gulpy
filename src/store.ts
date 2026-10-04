@@ -218,8 +218,12 @@ export interface Otp {
   usedAt: number | null;
 }
 
-/** `embed`: a developer registered it and it opens Link. `agent`: it signed up through standard OAuth. */
-export type AppKind = "embed" | "agent";
+/**
+ * `embed`: a developer registered it and it opens Link. `key`: the user made a key
+ * for an agent on the dashboard. `agent`: an agent that signed up through OAuth
+ * before Gulpy had keys. Gulpy no longer makes these.
+ */
+export type AppKind = "embed" | "key" | "agent";
 
 export interface App {
   id: string;
@@ -374,7 +378,7 @@ function toApp(row: Row): App {
     clientId: String(row.client_id),
     clientSecretHash: String(row.client_secret_hash),
     origins: strings(row.origins),
-    kind: row.kind === "agent" ? "agent" : "embed",
+    kind: row.kind === "key" || row.kind === "agent" ? row.kind : "embed",
     redirectUris: strings(row.redirect_uris),
     clientUri: row.client_uri === null || row.client_uri === undefined ? null : String(row.client_uri),
     createdAt: Number(row.created_at),
@@ -732,8 +736,10 @@ export class Store {
     return row ? toApp(row) : null;
   }
 
-  appsByOwner(userId: string): App[] {
-    return this.all("SELECT * FROM apps WHERE owner_user_id = ? ORDER BY created_at DESC", userId).map(toApp);
+  appsByOwner(userId: string, kind: AppKind = "embed"): App[] {
+    return this.all("SELECT * FROM apps WHERE owner_user_id = ? AND kind = ? ORDER BY created_at DESC", userId, kind).map(
+      toApp,
+    );
   }
 
   deleteApp(id: string, ownerUserId: string): boolean {

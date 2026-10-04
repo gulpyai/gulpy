@@ -5,7 +5,7 @@ import type { AccountChoice, LinkChoices, OpenLink } from "../link.ts";
 import type { LinkedAccount } from "../store.ts";
 import { BRAND } from "../brand.ts";
 import { SignInForm, type SignInState } from "./signin.tsx";
-import { Disclosure, Pair } from "./agent.tsx";
+import { Disclosure, Pair } from "./pair.tsx";
 import { ConnectorIcon, Icon, LinkPage, Mascot, Notice } from "./ui.tsx";
 
 export const LinkSignIn: FC<{ link: OpenLink; state: SignInState }> = ({ link, state }) => (

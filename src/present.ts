@@ -93,31 +93,3 @@ export function viewCatalog(deps: Deps, userId: string, onlyUsable = false): Cat
     cards: cards.filter((card) => card.connector.category === category),
   })).filter((group) => group.cards.length > 0);
 }
-
-export interface AgentChoice {
-  view: ConnectionView;
-  selected: boolean;
-  level: AccessLevel;
-  /** False if the connection needs a new sign-in. */
-  usable: boolean;
-}
-
-/**
- * What the approval page shows for one agent. An agent that the user approved
- * before keeps its selection. A new agent gets all connections, with read and
- * write access, so that one tap is enough.
- */
-export function agentChoices(deps: Deps, userId: string, grants: readonly Grant[], justConnected?: string): AgentChoice[] {
-  const byConnection = new Map(grants.map((grant) => [grant.connectionId, grant]));
-  const isNew = grants.length === 0;
-  return viewConnections(deps, userId).map((view) => {
-    const grant = byConnection.get(view.connection.id);
-    const usable = view.connection.status === "active";
-    return {
-      view,
-      usable,
-      selected: usable && (isNew || grant !== undefined || view.connection.id === justConnected),
-      level: grant ? levelOf(grant.capabilities) : "write",
-    };
-  });
-}

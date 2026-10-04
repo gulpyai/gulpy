@@ -2,15 +2,18 @@
 
 One login for all your AI plugins.
 
-ChatGPT, Claude and Grok each have a list of plugins. You connect the same tools
-again in each one. Gulpy is one place for your connections. You add one address
-to each agent, a window opens, you tap **Allow**, and the agent has your tools.
+Each AI agent has its own list of plugins. You connect the same tools again in
+each one. Gulpy is one place for your connections. You make a key on the
+dashboard and paste one message into any agent. The agent saves the key and
+calls your tools with plain HTTP and JSON. No MCP, no approval window.
 
 "Plug", read from right to left, is "gulp". The mascot is a plug that eats tools.
 
-| The site | Your tools | A new agent asks |
-|---|---|---|
-| ![Landing](docs/screenshots/01-landing.png) | ![My tools](docs/screenshots/02-my-tools.png) | ![Approval](docs/screenshots/03-approval.png) |
+| The site | Your tools |
+|---|---|
+| ![Landing](docs/screenshots/01-landing.png) | ![My tools](docs/screenshots/02-my-tools.png) |
+
+The screenshots show the design before keys. The dashboard now has a "Connect an agent" panel.
 
 The name is in one file: [src/brand.ts](src/brand.ts). The folder and the key labels keep
 the first name, "connecty".
@@ -26,7 +29,7 @@ bun run dev
 
 | Address | What it is |
 |---|---|
-| http://localhost:4000 | **Gulpy**: the site, your tools, the approval window, the MCP server |
+| http://localhost:4000 | **Gulpy**: the site, your tools, the API for agents |
 | http://localhost:4500 | **Orbit**, an agent to try Gulpy with. It knows the Gulpy address only. |
 | http://localhost:4600 | **Scout**, a second agent |
 
@@ -37,11 +40,11 @@ Do these steps:
 1. Open Gulpy. Sign in with an email address. On this computer no mail goes out, so
    the page fills in the code.
 2. Select **+** on a tool, for example Notion or Linear. You sign in at the provider.
-3. Open Orbit. Select **Connect with Gulpy**. A window opens. Select **Allow**.
-   Gulpy eats the tools and the window closes.
-4. Ask Orbit a question about your tools.
-5. Open Scout. Connect it. This is the one-tap flow.
-6. Open Gulpy. You see the agents and each call. Remove the access of one agent.
+3. On Gulpy, type "Orbit" and select **Make a key**. Copy the message.
+4. Open Orbit. Paste the message. Orbit saves the key.
+5. Ask Orbit a question about your tools.
+6. Make a second key for Scout.
+7. Open Gulpy. You see the agents and each call. Remove one agent. Its key stops.
 
 Orbit and Scout think with the `claude` command of this computer, with your Claude
 account. Each question uses a small part of your Claude plan. If the command is not
@@ -49,26 +52,37 @@ on the computer, the agents show a list of tools that you can run.
 
 ## Add Gulpy to a real agent
 
-Add a custom connector or MCP server with this address:
+Any agent that can make a web request works: ChatGPT, Claude, Codex, Claude Code,
+OpenClaw or your own script.
 
-```
-http://localhost:4000/mcp
-```
+1. Open My tools. Type a name for the agent and select **Make a key**.
+2. Copy the message and paste it into the agent. It looks like this:
 
-An agent on your computer, such as Claude Code, can reach `localhost`:
+   ```
+   I use Gulpy to connect my tools (email, calendar, Notion, GitHub and others). You can use them with plain HTTP.
 
-```sh
-claude mcp add --transport http gulpy http://localhost:4000/mcp
-```
+   Save these two lines in your memory, so that you can use my tools in later conversations:
+   - Gulpy key: gulpy_...
+   - Gulpy guide: https://cloud.gulpy.ai/agents.md
 
-ChatGPT, Claude on the web and Grok call the connector from their servers. For
-them, Gulpy must have a public `https` address. Set `GULPY_BASE_URL` to it.
+   Now read the guide, then list my tools. Keep the key secret: send it only to https://cloud.gulpy.ai.
+   ```
 
-| Assistant | Steps |
-|---|---|
-| Claude | Customize, then Connectors. Select "+", then "Add custom connector". Paste the address. |
-| ChatGPT | Settings, then Security and login. Turn on Developer mode. Create an app for a remote MCP server. |
-| Grok | grok.com/connectors. Select New Connector, then Custom. Paste the address. |
+3. The agent reads [`/agents.md`](src/guide.ts) and calls the API:
+
+   ```sh
+   curl https://cloud.gulpy.ai/v1/tools -H "Authorization: Bearer $GULPY_KEY"
+
+   curl -X POST https://cloud.gulpy.ai/v1/tools/email_search \
+     -H "Authorization: Bearer $GULPY_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "invoice", "limit": 5}'
+   ```
+
+A key reaches each connection of the user, also the connections that the user
+adds later. It does not expire. Remove the agent on My tools to stop the key.
+
+An agent in the cloud needs a public `https` address. Set `GULPY_BASE_URL` to it.
 
 ## Real connectors
 
@@ -106,40 +120,34 @@ security add-generic-password -a "$USER" -s gulpy-connector-github-client-secret
 ## How it works
 
 ```
-   Agent (Orbit, ChatGPT, Claude, Grok)            Gulpy                      Connector (Notion)
+   Agent (any)                                     Gulpy                      Connector (Notion)
         |                                             |                               |
-        |  1. POST /mcp with no token                 |                               |
-        |-------------------------------------------->|                               |
-        |     401, with the address of the metadata   |                               |
-        |  2. reads the metadata, registers itself    |                               |
-        |-------------------------------------------->|                               |
-        |  3. sends the user to /oauth/authorize      |                               |
-        |        the user selects connections and     |   (first time for a           |
-        |        taps Allow access                    |    connector: the user        |
-        |  4. code -> access token + refresh token    |    signs in at Notion)        |
-        |<--------------------------------------------|------------------------------>|
-        |  5. tools/list, tools/call                  |   tools/call with the token   |
-        |-------------------------------------------->|   of the user                 |
-        |                                             |------------------------------>|
+        |  GET /v1/tools                              |                               |
+        |  Authorization: Bearer gulpy_...            |                               |
+        |-------------------------------------------->|  tools/list (cached 6 hours)  |
+        |     { "tools": [...] }                      |------------------------------>|
+        |<--------------------------------------------|                               |
+        |  POST /v1/tools/notion_search {"query":..}  |                               |
+        |-------------------------------------------->|  the call, with the token     |
+        |                                             |  of the user                  |
+        |     { "result": ... }                       |------------------------------>|
+        |<--------------------------------------------|                               |
 ```
 
 Three objects carry the design:
 
 - A **connection** is one account at one connector. It belongs to the user. It holds
   the tokens, encrypted.
-- A **grant** gives one agent access to one connection, as **Read only** or
-  **Read and write**. The user makes it on the approval page and can remove it.
+- A **key** belongs to one agent of the user. It reaches each connection of the user.
+  Gulpy stores only its hash.
 - A **connector** is an entry in the list. It is an MCP server that the provider
   operates, or a provider API for which Gulpy supplies the tools.
 
-The agent never gets the token of a connector. Gulpy reads the grant on each
-call and then makes the call.
+The agent never gets the token of a connector. Gulpy makes each call.
 
-This follows the MCP authorization specification: OAuth 2.1 with PKCE, protected
-resource metadata (RFC 9728), server metadata (RFC 8414), dynamic client
-registration (RFC 7591), and client ID metadata documents. The specification
-forbids a server to pass on the token of the agent. It permits a proxy that has
-consent for each client. Gulpy is that proxy.
+Many providers (Notion, Linear, Stripe and others) offer their tools only as an MCP
+server. Gulpy talks to those servers itself, in `src/upstream/`. The agent does not
+see this: it sends and gets plain JSON.
 
 ## Link: connect from your own page
 
@@ -181,6 +189,8 @@ All paths start with `/v1`. Errors have the shape `{ "error": { "code", "message
 |---|---|---|
 | `POST /link/token/create` | client ID + secret | Makes a link token. It works for 30 minutes. |
 | `POST /link/public_token/exchange` | client ID + secret | Gives an access token for one user. |
+| `GET /tools` | key or access token | Lists the tools that the caller can use. |
+| `POST /tools/:name` | key or access token | Runs one tool. The body is the arguments, as JSON. |
 | `GET /connections` | access token | Lists the accounts that the user shared. |
 | `DELETE /connections/:id` | access token | The app gives up its access to one account. |
 | `GET /email/messages`, `GET /email/messages/:id`, `POST /email/messages` | access token | Mail |
@@ -209,14 +219,12 @@ All paths start with `/v1`. Errors have the shape `{ "error": { "code", "message
 | Threat | Control |
 |---|---|
 | The database is stolen | Tokens and client registrations are encrypted with AES-256-GCM. Each value is bound to its row. Secrets of apps, access tokens, refresh tokens and session IDs are stored as hashes only. |
-| An agent does more than the user approved | The agent never gets the token of a connector. Gulpy reads the grant on each call. Read access gives only the tools that say that they only read. |
-| A false agent asks for access | The approval page shows where the agent returns the user to, and says that the agent is not verified. Gulpy redirects only to a registered address. |
-| A copy of a refresh token | A refresh token works one time. A second use cancels all tokens of that sign-in. |
-| A stolen authorization code | PKCE with S256 is necessary. A code works one time, for 5 minutes. |
-| A client metadata address that points to the internal network | Gulpy refuses IP addresses and `localhost`. In production it also resolves the name and refuses private addresses. It follows no redirect. |
+| A key leaks | A key reaches all the tools of the user, with read and write. Gulpy stores only its hash and shows it one time. The user removes the agent to stop the key. Each call is on the dashboard. |
+| An agent gets a provider token | The agent never gets the token of a connector. Gulpy makes each call. |
+| A Link app does more than the user approved | Gulpy reads the grant on each call. |
 | A page on a different site submits a form | Gulpy checks `Sec-Fetch-Site`, and each form has a secret field. Cookies are `SameSite=Lax` and `HttpOnly`. |
 | An attacker signs the victim in to the attacker's account | A sign-in code works only in the browser that asked for it. A provider callback works only in the session that started it. |
-| A hidden frame gets a click on **Allow access** | Pages forbid frames (`frame-ancestors 'none'`). |
+| A hidden frame gets a click on **Allow access** (Link) | Pages forbid frames (`frame-ancestors 'none'`). |
 | Two apps compare their users | Each Link app sees a different user ID for the same person. |
 | The user wants to know what happened | The dashboard shows each call. It records the tool and the result, not the content. |
 
@@ -224,8 +232,9 @@ Known gaps:
 
 - **Tool descriptions come from the connector and go to the AI model.** A bad connector
   can put instructions in them. Gulpy limits the length. It does not inspect the text.
-- The agents that register automatically are not verified. Gulpy has no list of
-  known agents yet.
+- A key has no scopes and no expiry. The user decided this on 2026-09-29: an agent
+  gets everything with no approval step. The agent that holds the key, and the
+  memory where it keeps the key, see the key.
 - No rate limits. One server process only: the refresh lock is in memory.
 
 ## Logos
@@ -248,7 +257,8 @@ the site of that company.
 src/
   catalog.ts        the list of connectors
   logos.ts          the logo images, and the rule for the logo of an agent
-  agents.ts         Gulpy as an OAuth server for agents
+  tools.ts          the tools that agents call: GET /v1/tools, POST /v1/tools/:name
+  guide.ts          the guide for agents (/agents.md) and the message with the key
   upstream/         Gulpy as a client of an upstream MCP server
   service.ts        tools, mail, calendar and proxy operations
   vault.ts          token encryption and refresh
@@ -256,7 +266,7 @@ src/
   link.ts           Link: tokens, account choices, approval
   oauth.ts          sign-in at a provider that has its own API
   providers/        google.ts, microsoft.ts
-  routes/           pages.tsx, info.tsx (support, security, privacy, terms), oauth.ts, mcp.ts, api.ts
+  routes/           pages.tsx, info.tsx (support, security, privacy, terms), api.ts
   views/            the pages
 examples/
   agent/            Orbit and Scout. They think with the `claude` command.
@@ -269,7 +279,7 @@ test/               end-to-end tests. They use no network.
 ## Tests
 
 ```sh
-bun test          # 104 tests
+bun test          # 102 tests
 bun run typecheck
 ```
 
@@ -277,11 +287,9 @@ bun run typecheck
 
 Verified:
 
-- The full flow: 104 automated tests, and runs in a real browser (Chromium) with the
-  pop-up window. The tests use a mail provider and connectors that exist for the tests only.
-- A real AI agent: Claude answered questions with tools that came through Gulpy.
-- The agent side, with the official MCP SDK as the agent: discovery, registration,
-  sign-in, token refresh, tool calls.
+- The full flow: 102 automated tests. The tests use a mail provider and connectors
+  that exist for the tests only. The key flow is tested end to end: make a key, list
+  tools, call tools, remove the key.
 - The registration of Gulpy at 24 real connectors. Their sign-in pages show the name "Gulpy".
 
 - Gulpy in production mode with the real address setting (`https://gulpy.ai`).
@@ -292,7 +300,8 @@ Not verified:
 - **The sign-in of a user at a real connector, and a tool call with a real account.**
   This needs your accounts. Select **+** on a tool to try it.
 - The Google and Microsoft adapters did not run against the real services.
-- ChatGPT, Claude and Grok as the agent. They need a public `https` address.
+- A real agent (ChatGPT, Claude, Codex) that uses a key and `/agents.md`. Keys were
+  added on 2026-09-29. Agents in the cloud need a public `https` address.
 - Mail to a real person. The `ResendMailer` sent one message to the test mailbox of Resend (HTTP 200).
 
 Not built yet:

@@ -89,10 +89,31 @@ export function tokensFor(deps: Deps, backend: Backend): TokenClient {
   return backend.kind === "native" ? providerTokens(deps, backend.provider) : upstreamTokens(deps, backend.connector);
 }
 
+/**
+ * A key of the user reaches each connection of the user, with each capability
+ * of the connection. A connection that the user adds later is in it too.
+ */
+function keyGrants(deps: Deps, app: App, userId: string): Grant[] {
+  return deps.store.connectionsByUser(userId).map((connection) => ({
+    id: `key:${connection.id}`,
+    userId,
+    appId: app.id,
+    connectionId: connection.id,
+    capabilities: connection.capabilities,
+    createdAt: app.createdAt,
+    updatedAt: app.createdAt,
+  }));
+}
+
+export function isKeyOf(app: App, userId: string): boolean {
+  return app.kind === "key" && app.ownerUserId === userId;
+}
+
 /** Grants are read on each call, so a change by the user applies immediately. */
-export function grantedConnections(deps: Deps, appId: string, userId: string): GrantedConnection[] {
+export function grantedConnections(deps: Deps, app: App, userId: string): GrantedConnection[] {
   const granted: GrantedConnection[] = [];
-  for (const grant of deps.store.grantsForAppUser(appId, userId)) {
+  const grants = isKeyOf(app, userId) ? keyGrants(deps, app, userId) : deps.store.grantsForAppUser(app.id, userId);
+  for (const grant of grants) {
     const connection = deps.store.connectionById(grant.connectionId);
     const backend = connection ? backendOf(deps, connection) : null;
     if (!connection || !backend) continue;

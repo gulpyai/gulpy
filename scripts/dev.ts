@@ -1,7 +1,7 @@
 /**
  * Starts Gulpy and two agents on this computer:
  *   Gulpy   http://localhost:4000
- *   Orbit   http://localhost:4500   an agent. It knows the Gulpy address only.
+ *   Orbit   http://localhost:4500   an agent. You paste a Gulpy key into it.
  *   Scout   http://localhost:4600   a second agent
  *
  * The tools are the real connectors in the list.
@@ -19,13 +19,13 @@ const url = (port: number) => `http://localhost:${port}`;
 const config = loadConfig({ port: PORTS.gulpy, baseUrl: url(PORTS.gulpy) });
 const { app: gulpy, deps } = await createApp(createDeps({ config }));
 
-const mcpUrl = `${config.baseUrl}/mcp`;
+const gulpyUrl = config.baseUrl;
 const orbit = createAgent({
   name: "Orbit",
   tagline: "What can I do for you?",
   colors: ["#6d28d9", "#ede9fe"],
   baseUrl: url(PORTS.orbit),
-  mcpUrl,
+  gulpyUrl,
   ideas: ["What can you do with my tools?", "What is open for me today?", "Give me a summary of my last work"],
 });
 const scout = createAgent({
@@ -33,7 +33,7 @@ const scout = createAgent({
   tagline: "Where do we start?",
   colors: ["#0f766e", "#ccfbf1"],
   baseUrl: url(PORTS.scout),
-  mcpUrl,
+  gulpyUrl,
   ideas: ["Which tools do I have?", "What changed this week?", "Find what I worked on last"],
 });
 
@@ -47,9 +47,10 @@ console.log(`
 Gulpy
 
   1. Open Gulpy   ${url(PORTS.gulpy)}   Sign in. Add your tools.
-  2. Open Orbit   ${url(PORTS.orbit)}   Select "Connect with Gulpy". A window opens. Select Allow.
-  3. Open Scout   ${url(PORTS.scout)}   A second agent. One tap.
+  2. On Gulpy, select "Make a key". Copy the message.
+  3. Open Orbit   ${url(PORTS.orbit)}   Paste the message. Select Connect.
+  4. Open Scout   ${url(PORTS.scout)}   A second agent. Make a second key for it.
 
-  The address that an agent needs: ${mcpUrl}
+  The guide that an agent reads: ${gulpyUrl}/agents.md
   Tools in the list: ${deps.catalog.all().length}. Ready now: ${ready}.
 `);

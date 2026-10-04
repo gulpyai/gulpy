@@ -29,7 +29,7 @@ describe("help and rules", () => {
   test("the support page gives the address for agents", async () => {
     const world = await createWorld();
     const html = await (await world.gulpy.app.request(`${GULPY}/support`)).text();
-    expect(html).toContain(`${GULPY}/mcp`);
+    expect(html).toContain(`${GULPY}/agents.md`);
     expect(html).toContain("support@gulpy.ai");
   });
 

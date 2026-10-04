@@ -1,7 +1,3 @@
-import { auth, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { randomBytes } from "node:crypto";
 import { demoProvider } from "./fixtures/mail-provider/adapter.ts";
 import { createMockProvider, type MockProvider } from "./fixtures/mail-provider/server.tsx";
@@ -423,170 +419,55 @@ export async function addConnector(browser: Browser, connectorId: string, accoun
   return approveAtConnector(browser, consent, account);
 }
 
+/** The key in the message that the dashboard shows after "Make a key". */
+export function keyIn(html: string): string {
+  const key = /gulpy_[A-Za-z0-9_-]+/.exec(html)?.[0];
+  if (!key) throw new Error("The page shows no key");
+  return key;
+}
+
 /**
- * An agent that uses the MCP SDK to sign in, as real agents do. It finds the
- * authorization server, registers itself, and exchanges the code.
+ * An agent that got a key from the user. It calls Gulpy with plain HTTP, as
+ * the guide at /agents.md says.
  */
-export class TestAgent implements OAuthClientProvider {
-  client: OAuthClientInformationMixed | undefined;
-  saved: OAuthTokens | undefined;
-  /** Where the SDK wants to send the user. */
-  authorizeUrl: URL | undefined;
-  private verifier = "";
+export class TestAgent {
+  key = "";
 
   constructor(
     private readonly world: World,
     readonly name: string,
-    readonly redirect = `https://${name.toLowerCase()}.agent.test/callback`,
-    /** Set this to use a client ID metadata document and not registration. */
-    readonly clientMetadataUrl?: string,
   ) {}
 
-  get redirectUrl(): string {
-    return this.redirect;
+  /** The user makes a key on the dashboard. Returns the page with the message to paste. */
+  async connect(browser: Browser): Promise<Page> {
+    const dashboard = await browser.open(`${GULPY}/`);
+    const page = await browser.open(`${GULPY}/keys`, {
+      form: { csrf: field(dashboard.html, "csrf"), name: this.name },
+      from: dashboard.url,
+    });
+    this.key = keyIn(page.html);
+    return page;
   }
 
-  get clientMetadata(): OAuthClientMetadata {
-    return {
-      client_name: this.name,
-      redirect_uris: [this.redirect],
-      grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "none",
-    };
-  }
-
-  clientInformation() {
-    return this.client;
-  }
-
-  saveClientInformation(client: OAuthClientInformationMixed) {
-    this.client = client;
-  }
-
-  tokens() {
-    return this.saved;
-  }
-
-  saveTokens(tokens: OAuthTokens) {
-    this.saved = tokens;
-  }
-
-  redirectToAuthorization(url: URL) {
-    this.authorizeUrl = url;
-  }
-
-  state() {
-    return `state-${this.name}`;
-  }
-
-  /** Forgets the tokens, so that the next sign-in asks the user again. */
-  forget() {
-    this.saved = undefined;
-  }
-
-  saveCodeVerifier(verifier: string) {
-    this.verifier = verifier;
-  }
-
-  codeVerifier() {
-    return this.verifier;
-  }
-
-  /** Starts the sign-in. Returns the Gulpy page that the user sees. */
-  async start(browser: Browser): Promise<Page> {
-    this.authorizeUrl = undefined;
-    const result = await auth(this, { serverUrl: `${GULPY}/mcp`, fetchFn: this.world.fetch });
-    // The SDK sets the address through redirectToAuthorization.
-    const target = this.pending();
-    if (result !== "REDIRECT" || !target) throw new Error(`The agent did not start the sign-in: ${result}`);
-    return browser.open(target.toString());
-  }
-
-  private pending(): URL | undefined {
-    return this.authorizeUrl;
-  }
-
-  /** Submits the approval page. `levels` sets the access for a connection; the default is what the page shows. */
-  async allow(browser: Browser, consent: Page, options: { select?: string[]; levels?: Record<string, "read" | "write"> } = {}) {
-    const selected = options.select ?? checked(consent.html);
-    const form: Record<string, string | string[]> = { csrf: field(consent.html, "csrf"), decision: "allow", connection: selected };
-    for (const name of ["client_id", "redirect_uri", "response_type", "state", "code_challenge", "code_challenge_method", "resource", "scope"]) {
-      try {
-        form[name] = field(consent.html, name);
-      } catch {
-        // The agent did not send this parameter.
-      }
-    }
-    for (const id of selected) form[`level:${id}`] = options.levels?.[id] ?? selectedLevel(consent.html, id);
-    const page = await browser.open(`${GULPY}/oauth/authorize`, { form, from: consent.url });
-    const back = new URL(leaveAddress(page.html));
-    const code = back.searchParams.get("code");
-    if (!code) throw new Error(`No code: ${back.search}`);
-    const result = await auth(this, { serverUrl: `${GULPY}/mcp`, authorizationCode: code, fetchFn: this.world.fetch });
-    if (result !== "AUTHORIZED") throw new Error("The agent did not get tokens");
-    return back;
-  }
-
-  /** Signs in from start to end with what the approval page selects. */
-  async connect(browser: Browser, options: { select?: string[]; levels?: Record<string, "read" | "write"> } = {}) {
-    return this.allow(browser, await this.start(browser), options);
-  }
-
-  /** An MCP client that uses the tokens of this agent. */
-  async mcp(): Promise<Client> {
-    const client = new Client({ name: this.name, version: "1.0.0" });
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(`${GULPY}/mcp`), { fetch: this.world.fetch, authProvider: this }),
-    );
-    return client;
+  request(path: string, init: { method?: string; body?: unknown } = {}): Promise<Response> {
+    return this.world.fetch(`${GULPY}${path}`, {
+      method: init.method ?? "GET",
+      headers: { authorization: `Bearer ${this.key}`, "content-type": "application/json" },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
   }
 
   async toolNames(): Promise<string[]> {
-    const client = await this.mcp();
-    try {
-      return (await client.listTools()).tools.map((tool) => tool.name).sort();
-    } finally {
-      await client.close();
-    }
+    const response = await this.request("/v1/tools");
+    if (!response.ok) throw new Error(`GET /v1/tools: ${response.status}`);
+    const { tools } = (await response.json()) as { tools: { name: string }[] };
+    return tools.map((tool) => tool.name).sort();
   }
 
-  async call(name: string, args: Record<string, unknown> = {}): Promise<{ isError: boolean; text: string }> {
-    const client = await this.mcp();
-    try {
-      const result = await client.callTool({ name, arguments: args });
-      const content = result.content as { type: string; text?: string }[];
-      return { isError: result.isError === true, text: content.map((item) => item.text ?? "").join("") };
-    } finally {
-      await client.close();
-    }
+  /** Calls one tool. `result` is the value, or the error of Gulpy. */
+  async call(name: string, args: Record<string, unknown> = {}): Promise<{ status: number; result: any; error?: { code: string; message: string } }> {
+    const response = await this.request(`/v1/tools/${name}`, { method: "POST", body: args });
+    const body = (await response.json()) as { result?: unknown; error?: { code: string; message: string } };
+    return { status: response.status, result: body.result, error: body.error };
   }
-}
-
-/** The access level that the approval page shows for a connection. */
-export function selectedLevel(html: string, connectionId: string): "read" | "write" {
-  const radios = [...html.matchAll(new RegExp(`<input[^>]*name="level:${connectionId}"[^>]*>`, "g"))].map((match) => match[0]);
-  const chosen = radios.find((tag) => /\bchecked\b/.test(tag));
-  return chosen && /value="read"/.test(chosen) ? "read" : "write";
-}
-
-/** The connection ids on the approval page, with the name that the page shows. */
-export function choices(html: string): { id: string; checked: boolean }[] {
-  return [...html.matchAll(/<input[^>]*type="checkbox"[^>]*name="connection"[^>]*>/g)].map((match) => ({
-    id: unescapeHtml(/\bvalue="([^"]*)"/.exec(match[0])?.[1] ?? ""),
-    checked: /\bchecked\b/.test(match[0]),
-  }));
-}
-
-/** The request of the agent, as the approval page holds it in hidden fields. */
-export function agentRequest(html: string): Record<string, string> {
-  const request: Record<string, string> = {};
-  for (const name of ["client_id", "redirect_uri", "response_type", "state", "code_challenge", "code_challenge_method", "resource", "scope"]) {
-    try {
-      request[name] = field(html, name);
-    } catch {
-      // The agent did not send this parameter.
-    }
-  }
-  return request;
 }

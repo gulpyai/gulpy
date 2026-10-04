@@ -136,7 +136,7 @@ export class Gulpy {
   }
 
   private granted(access: Access): GrantedConnection[] {
-    return grantedConnections(this.deps, access.app.id, access.userId);
+    return grantedConnections(this.deps, access.app, access.userId);
   }
 
   private natives(access: Access): Native[] {
@@ -235,6 +235,9 @@ export class Gulpy {
   removeConnection(access: Access, connectionId: string): void {
     const target = this.granted(access).find((item) => item.connection.id === connectionId);
     if (!target) throw new ApiError(404, "not_found", "No connection with this id");
+    if (access.app.kind === "key") {
+      throw new ApiError(400, "invalid_request", "A key reaches all connections. Remove the connection on the dashboard.");
+    }
     this.deps.store.deleteGrant(target.grant.id, access.userId);
     this.audit(access, connectionId, "grant.remove", "Removed by the app", 200);
   }

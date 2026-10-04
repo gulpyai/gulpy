@@ -141,13 +141,12 @@ describe("app credentials", () => {
     await expect(allow(browser, consent)).rejects.toThrow();
   });
 
-  test("an access token is necessary for the API and for MCP", async () => {
-    for (const token of [undefined, "access_wrong", ""]) {
+  test("a key or an access token is necessary for the API", async () => {
+    for (const token of [undefined, "access_wrong", "gulpy_wrong", ""]) {
       expect((await world.api("/connections", { token })).status).toBe(401);
       expect((await world.api("/email/messages", { token })).status).toBe(401);
+      expect((await world.api("/tools", { token })).status).toBe(401);
     }
-    const mcp = await world.fetch(`${GULPY}/mcp`, { method: "POST", body: "{}" });
-    expect(mcp.status).toBe(401);
   });
 });
 
