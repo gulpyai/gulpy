@@ -464,6 +464,8 @@ export function setAgentAccess(
       if (!areas) continue;
       const capabilities = capabilitiesForAreas(areas, connection.capabilities);
       if ((grant?.capabilities ?? []).join() === capabilities.join()) continue;
+      // A connection that needs a new sign-in gets no new grant. It can still lose one.
+      if (!grant && capabilities.length > 0 && connection.status !== "active") continue;
       if (capabilities.length === 0) {
         deps.store.deleteGrantFor(appId, connection.id);
       } else {

@@ -1,6 +1,6 @@
 import type { Child, FC, PropsWithChildren } from "hono/jsx";
 import type { Viewer } from "../auth.ts";
-import { BRAND, CONTACT } from "../brand.ts";
+import { BRAND, CONTACT, SITE_URL } from "../brand.ts";
 import { CAPABILITIES, type CapabilityId } from "../capabilities.ts";
 import type { LogoImage } from "../logos.ts";
 
@@ -75,7 +75,8 @@ export const Mascot: FC<{ size?: "small" | "medium" | "large" | "hero"; mood?: "
   </svg>
 );
 
-export const Brand: FC<{ href?: string }> = ({ href = "/" }) => (
+/** The logo goes to the first page of the marketing site. */
+export const Brand: FC<{ href?: string }> = ({ href = `${SITE_URL}/` }) => (
   <a class="brand" href={href}>
     <Mascot size="small" />
     {BRAND.name}

@@ -1,3 +1,4 @@
+import { SITE_URL } from "./brand.ts";
 import { randomBytes } from "node:crypto";
 import type { CustomConnector } from "./catalog.ts";
 
@@ -167,6 +168,6 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     connectorClients: overrides.connectorClients ?? connectorClients(env),
     stripe: overrides.stripe ?? stripeConfig(env),
     autoApprove: overrides.autoApprove ?? process.env.GULPY_AUTO_APPROVE !== "off",
-    siteOrigin: overrides.siteOrigin ?? new URL(process.env.GULPY_SITE_URL || "https://gulpy.ai").origin,
+    siteOrigin: overrides.siteOrigin ?? new URL(SITE_URL).origin,
   };
 }

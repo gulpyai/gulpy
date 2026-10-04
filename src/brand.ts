@@ -13,7 +13,9 @@ export const CONTACT = {
 } as const;
 
 /** The plans and their prices, on the marketing site. The dashboard links here from Free. */
-export const PRICING_URL = "https://gulpy.ai/pricing";
+/** The marketing site: the first page, and the plans. `GULPY_SITE_URL` sets it for a test copy. */
+export const SITE_URL = (process.env.GULPY_SITE_URL || "https://gulpy.ai").replace(/\/+$/, "");
+export const PRICING_URL = `${SITE_URL}/pricing`;
 
 /**
  * The legal facts that the Terms and the Privacy page use. Change `entity` to the

@@ -19,10 +19,11 @@ function createStripe() {
   const sessions: Record<string, unknown> = {};
   const portalRequests: Record<string, string>[] = [];
   const canceled: string[] = [];
-  const failures = { cancel: false };
+  const failures = { cancel: false, gone: false };
   const app = new Hono();
   app.delete("/v1/subscriptions/:id", (c) => {
     if (failures.cancel) return c.json({ error: { message: "Stripe is down" } }, 500);
+    if (failures.gone) return c.json({ error: { message: "No such subscription" } }, 404);
     canceled.push(c.req.param("id"));
     return c.json({ id: c.req.param("id"), status: "canceled" });
   });
@@ -323,6 +324,16 @@ describe("deleting the account", () => {
     expect(world.gulpy.deps.store.userById(id)).toBeNull();
   });
 
+  test("deletes the account when Stripe has no such plan any more", async () => {
+    await browser.signIn(world, EMAIL);
+    stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
+    await webhook({ type: "customer.subscription.created", data: { object: subscription({ plan: "pro", interval: "month" }) } });
+    stripe.failures.gone = true;
+    const id = userId();
+    await deleteAccount();
+    expect(world.gulpy.deps.store.userById(id)).toBeNull();
+  });
+
   test("keeps the account when Stripe cannot cancel the plan", async () => {
     await browser.signIn(world, EMAIL);
     stripe.customers.cus_1 = { id: "cus_1", email: EMAIL };
@@ -362,6 +373,9 @@ describe("what a plan changes", () => {
     approvedAgent("Three");
     expect(agentAllowed(deps, userId(), "app_Four")).toBe(false);
     expect(agentAllowed(deps, userId(), first)).toBe(true);
+    // A new sign-in of an agent that the person has (a new app with the same name) is not a new agent.
+    deps.store.createApp({ id: "app_two_again", ownerUserId: null, name: "Two", clientId: "app_two_again", clientSecretHash: "", origins: [], kind: "agent", createdAt: deps.now() });
+    expect(agentAllowed(deps, userId(), "app_two_again")).toBe(true);
     const home = await browser.open(`${GULPY}/`);
     expect(home.html).toContain(`3 of ${FREE_AGENTS} agents`);
     expect(home.html).toContain("Upgrade to Pro");

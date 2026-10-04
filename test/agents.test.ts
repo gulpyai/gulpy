@@ -270,6 +270,20 @@ describe("an agent signs in with standard MCP authorization", () => {
     expect(call.headers.get("www-authenticate")).toContain("/.well-known/oauth-protected-resource");
   });
 
+  test("a person cannot change the access of an agent of a different person", async () => {
+    const orbit = new TestAgent(world, "Orbit");
+    await orbit.connect(browser);
+    const store = world.gulpy.deps.store;
+    const appId = (store.db.query("SELECT id FROM apps WHERE name = 'Orbit'").get() as { id: string }).id;
+    const before = JSON.stringify(store.db.query("SELECT * FROM grants ORDER BY id").all());
+    const other = world.browser();
+    await other.signIn(world, "other@example.com");
+    const page = await other.open(`${GULPY}/`);
+    const connection = (store.db.query("SELECT connection_id FROM grants WHERE app_id = ?").get(appId) as { connection_id: string }).connection_id;
+    await other.open(`${GULPY}/apps/${appId}/access`, { form: { csrf: field(page.html, "csrf"), [`level:${connection}`]: "off" }, from: page.url });
+    expect(JSON.stringify(store.db.query("SELECT * FROM grants ORDER BY id").all())).toBe(before);
+  });
+
   test("the user gives an agent Google Calendar with edits, Drive read only, and no Gmail", async () => {
     const orbit = new TestAgent(world, "Orbit");
     await orbit.connect(browser);

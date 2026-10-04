@@ -398,8 +398,8 @@ export const Privacy: FC<{ model: InfoModel }> = ({ model }) => (
         <li>The tokens of a tool: until you remove the tool or delete your account.</li>
         <li>Your approvals: until you remove the agent or delete your account.</li>
         <li>
-          The list of calls: 7 days on Free, {LEGAL.callLogDays} days on Pro. Then {BRAND.name} deletes it
-          automatically.
+          The list of calls: 7 days on Free (in your data download), {LEGAL.callLogDays} days on Pro (in Activity).
+          Then {BRAND.name} deletes it automatically.
         </li>
         <li>Sign-in codes: 1 day after they expire. Sessions: when they expire.</li>
         <li>Tokens of agents that expired or that you removed: 30 days.</li>

@@ -89,6 +89,8 @@
     var count = agent && agent.querySelector("[data-agent-count]");
     var timer = null;
     var hide = null;
+    // Each save has a number. An older save that answers last does not change the page.
+    var sent = 0;
     if (save) save.hidden = true;
 
     function say(text, kind) {
@@ -110,6 +112,7 @@
         return;
       }
       say("Saving…");
+      var mine = (sent += 1);
       fetch(form.action, {
         method: "POST",
         body: new URLSearchParams(new FormData(form)),
@@ -121,6 +124,7 @@
           return response.json();
         })
         .then(function (result) {
+          if (mine !== sent) return;
           if (!result.ok) throw new Error("not saved");
           if (count) {
             count.textContent =
@@ -132,6 +136,7 @@
           }, 1800);
         })
         .catch(function () {
+          if (mine !== sent) return;
           say("Not saved. Check your connection and try again.", "warn");
         });
     }

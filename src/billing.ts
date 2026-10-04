@@ -64,13 +64,16 @@ export function unlimited(deps: Deps, userId: string): boolean {
 }
 
 /**
- * True when the person can approve this agent: an agent that they approved before, a paid plan,
- * or fewer than `FREE_AGENTS` agents on Free.
+ * True when the person can approve this agent: an agent that they approved before (the same app,
+ * or an app with the same name), a paid plan, or fewer than `FREE_AGENTS` agents on Free.
  */
 export function agentAllowed(deps: Deps, userId: string, appId: string): boolean {
   if (unlimited(deps, userId)) return true;
   const agents = deps.store.agentsOfUser(userId, deps.now());
-  return agents.includes(appId) || agents.length < FREE_AGENTS;
+  if (agents.includes(appId) || agents.length < FREE_AGENTS) return true;
+  // Each new sign-in of an agent (for example Claude Code again) makes a new app. The same name is the same agent.
+  const name = deps.store.appById(appId)?.name.trim().toLowerCase();
+  return !!name && agents.some((id) => deps.store.appById(id)?.name.trim().toLowerCase() === name);
 }
 
 export interface PlanView {
@@ -164,6 +167,15 @@ function idOf(value: string | { id: string } | null | undefined): string | null 
   return typeof value === "string" ? value : value.id;
 }
 
+class StripeError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function stripe<T>(deps: Deps, method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string> = {}): Promise<T> {
   const key = deps.config.stripe?.secretKey;
   if (!key) throw new Error("Stripe is not set up");
@@ -178,7 +190,7 @@ async function stripe<T>(deps: Deps, method: "GET" | "POST" | "DELETE", path: st
     body: method === "POST" ? query : undefined,
   });
   const json = (await response.json()) as T & { error?: { message?: string } };
-  if (!response.ok) throw new Error(`Stripe ${method} ${path}: ${json.error?.message ?? `HTTP ${response.status}`}`);
+  if (!response.ok) throw new StripeError(`Stripe ${method} ${path}: ${json.error?.message ?? `HTTP ${response.status}`}`, response.status);
   return json;
 }
 
@@ -221,6 +233,14 @@ export async function cancelPlan(deps: Deps, userId: string): Promise<boolean> {
     await stripe(deps, "DELETE", `/subscriptions/${subscription.subscriptionId}`);
     return true;
   } catch (error) {
+    // Stripe does not know the plan any more, or it is cancelled already: nothing to stop.
+    if (error instanceof StripeError && error.status === 404) return true;
+    try {
+      const found = await stripe<{ status: string }>(deps, "GET", `/subscriptions/${subscription.subscriptionId}`);
+      if (!ACTIVE_STATUSES.includes(found.status)) return true;
+    } catch {
+      // The first error decides.
+    }
     console.error("[gulpy] cancel during account deletion failed", error);
     return false;
   }
