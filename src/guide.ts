@@ -27,8 +27,7 @@ curl -fsSL ${base}/connect.sh | sh -s -- "Claude Code"
 
 It opens the browser, waits for Allow, saves the key in \`~/.config/gulpy/key\`,
 tests the tools and prints one line, for example \`Connected: 58 tools.\`
-In Claude Code it also adds ${name} as an MCP server, so the tools are built in from
-the next session. Until then, and in every other agent, use the HTTP calls below.
+Then use the HTTP calls below.
 
 ### B. You can send web requests but not run commands (for example Meta Muse, Instinct)
 
@@ -41,15 +40,10 @@ the next session. Until then, and in every other agent, use the HTTP calls below
    The key waits 1 hour after Allow.
 4. Keep the key in your memory for later conversations.
 
-### C. You cannot run commands or send web requests (the ChatGPT app, the Claude app, Grok, Gemini)
+### C. You cannot run commands or send web requests
 
-Tell the user these steps. They take one minute and need no key:
-
-- **Claude:** Settings, Connectors, "Add custom connector", paste \`${base}/mcp\`, then Connect.
-- **ChatGPT:** Settings, Apps and connectors, Advanced, turn on Developer mode, then Create, paste \`${base}/mcp\`.
-- **Grok:** grok.com/connectors, New Connector, Custom, paste \`${base}/mcp\`.
-
-A window opens. The user taps Allow. The tools are then built in.
+You cannot use ${name}. Tell the user: "I cannot send web requests, so I cannot
+connect to ${name}. Use an agent that can, for example Claude Code or Codex."
 
 ### Then, in every case
 
@@ -85,11 +79,6 @@ curl -sS -X POST ${base}/v1/tools/email_search \\
 
 The answer is \`{ "result": ... }\`. Before a tool that is not \`read_only\` (for example
 \`email_send\`), tell the user what you will do.
-
-## Use the tools with MCP
-
-The address is \`${base}/mcp\` (Streamable HTTP). Send the same key as
-\`Authorization: Bearer <key>\`, or let the client sign in with OAuth.
 
 ## Errors
 
@@ -138,16 +127,8 @@ while :; do
     umask 077
     printf '%s\\n' "$KEY" > "$DIR/key"
     printf '%s\\n' "$BASE" > "$DIR/url"
-    # In Claude Code, also add ${BRAND.name} as an MCP server: built-in tools from the next session.
-    MCP=""
-    if [ -n "\${CLAUDECODE:-}" ] && command -v claude >/dev/null 2>&1; then
-      claude mcp remove gulpy -s user >/dev/null 2>&1 || true
-      if claude mcp add --scope user --transport http gulpy "$BASE/mcp" -H "Authorization: Bearer $KEY" >/dev/null 2>&1; then
-        MCP=" ${BRAND.name} is also an MCP server in Claude Code from the next session."
-      fi
-    fi
     TOOLS=$(curl -sS "$BASE/v1/tools" -H "Authorization: Bearer $KEY" | grep -o '"read_only":' | wc -l | tr -d ' ')
-    echo "Connected: $TOOLS tools. The key is in $DIR/key.$MCP"
+    echo "Connected: $TOOLS tools. The key is in $DIR/key."
     if [ "$TOOLS" -le 1 ]; then echo "Your ${BRAND.name} account has no tools yet. Add them at $BASE."; fi
     exit 0
   fi

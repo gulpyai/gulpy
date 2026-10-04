@@ -3,7 +3,12 @@
 # Run it again to send new code. It keeps the data that the server has.
 #
 #   scripts/deploy-vm.sh                                  # exahuman-2, https://app.gulpy.ai
+#   scripts/deploy-vm.sh test                             # exahuman-2, https://test.gulpy.ai (see below)
 #   GULPY_VM=my-host GULPY_HOST=x.gulpy.ai scripts/deploy-vm.sh
+#
+# `test` puts a second, separate copy on the same server: its own database, master key
+# (gulpy-test-master-key), tunnel (gulpy-test), folders (/opt/gulpy-test, /etc/gulpy-test) and
+# Stripe TEST keys. Try a branch there first; production does not change.
 #
 # GULPY_OLD_HOSTS: other names that the tunnel serves; Gulpy sends them to GULPY_HOST (default cloud.gulpy.ai).
 # GULPY_MASTER_KEY_NAME: the Keychain item of the master key (default gulpy-prod-master-key, the key of the
@@ -16,12 +21,26 @@ set -euo pipefail
 cd "${0:A:h}/.."
 
 VM="${GULPY_VM:-exahuman-2}"
-HOST="${GULPY_HOST:-app.gulpy.ai}"
-OLD_HOSTS=(${=GULPY_OLD_HOSTS-cloud.gulpy.ai})
-MASTER_KEY_NAME="${GULPY_MASTER_KEY_NAME:-gulpy-prod-master-key}"
-TUNNEL="${GULPY_TUNNEL:-gulpy-vm}"
 MAIL_FROM="${MAIL_FROM:-Gulpy <no-reply@gulpy.ai>}"
-DIR=/opt/gulpy
+if [[ "${1:-}" == test ]]; then
+  HOST="${GULPY_HOST:-test.gulpy.ai}"
+  OLD_HOSTS=(${=GULPY_OLD_HOSTS-})
+  MASTER_KEY_NAME="${GULPY_MASTER_KEY_NAME:-gulpy-test-master-key}"
+  TUNNEL="${GULPY_TUNNEL:-gulpy-test}"
+  PROJECT=gulpy-test
+  STRIPE_KEYS=(STRIPE_SECRET_KEY:gulpy-stripe-test-secret-key STRIPE_WEBHOOK_SECRET:gulpy-stripe-test-webhook-secret)
+else
+  HOST="${GULPY_HOST:-app.gulpy.ai}"
+  OLD_HOSTS=(${=GULPY_OLD_HOSTS-cloud.gulpy.ai})
+  MASTER_KEY_NAME="${GULPY_MASTER_KEY_NAME:-gulpy-prod-master-key}"
+  TUNNEL="${GULPY_TUNNEL:-gulpy-vm}"
+  PROJECT=gulpy
+  STRIPE_KEYS=(STRIPE_SECRET_KEY:gulpy-stripe-secret-key STRIPE_WEBHOOK_SECRET:gulpy-stripe-webhook-secret)
+fi
+DIR=/opt/$PROJECT
+ETC=/etc/$PROJECT
+# The two copies share the server, so each has its own compose project (and volume), image and secrets.
+COMPOSE="sudo env GULPY_ETC=$ETC GULPY_IMAGE=${PROJECT}:latest docker compose -p $PROJECT -f deploy/compose.yml"
 
 key() { security find-generic-password -s "$1" -w; }
 # A secret that is not in the Keychain. The server starts without it.
@@ -54,7 +73,7 @@ done
 rm -f "$EMPTY"
 
 # 3. The secrets, through SSH. Only root on the server can read them.
-remote "sudo install -d -m 700 /etc/gulpy && sudo install -d -m 755 /etc/gulpy/cloudflared && sudo install -d -o \$(id -u) -g \$(id -g) $DIR"
+remote "sudo install -d -m 700 $ETC && sudo install -d -m 755 $ETC/cloudflared && sudo install -d -o \$(id -u) -g \$(id -g) $DIR"
 {
   printf 'NODE_ENV=production\n'
   printf 'GULPY_BASE_URL=https://%s\n' "$HOST"
@@ -62,7 +81,7 @@ remote "sudo install -d -m 700 /etc/gulpy && sudo install -d -m 755 /etc/gulpy/c
   printf 'GULPY_MASTER_KEY=%s\n' "$(key "$MASTER_KEY_NAME")"
   printf 'RESEND_API_KEY=%s\n' "$(key gulpy-resend-api-key)"
   printf 'GULPY_REDIRECT_HOSTS=%s\n' "${(j:,:)OLD_HOSTS}"
-  for pair in STRIPE_SECRET_KEY:gulpy-stripe-secret-key STRIPE_WEBHOOK_SECRET:gulpy-stripe-webhook-secret \
+  for pair in "${STRIPE_KEYS[@]}" \
     GOOGLE_CLIENT_ID:gulpy-google-client-id GOOGLE_CLIENT_SECRET:gulpy-google-client-secret \
     MICROSOFT_CLIENT_ID:gulpy-microsoft-client-id MICROSOFT_CLIENT_SECRET:gulpy-microsoft-client-secret; do
     value="$(optional "${pair#*:}")"
@@ -75,15 +94,15 @@ remote "sudo install -d -m 700 /etc/gulpy && sudo install -d -m 755 /etc/gulpy/c
       if [[ -n "$value" ]]; then printf 'CONNECTOR_%s_%s=%s\n' "${(U)id}" "${(U)${part//-/_}}" "$value"; fi
     done
   done
-} | remote "sudo sh -c 'umask 077; cat > /etc/gulpy/env'"
+} | remote "sudo sh -c 'umask 077; cat > $ETC/env'"
 # The tunnel program in the container is user 65532.
-remote "sudo sh -c 'umask 077; cat > /etc/gulpy/cloudflared/creds.json; chown 65532:65532 /etc/gulpy/cloudflared/creds.json; chmod 400 /etc/gulpy/cloudflared/creds.json'" \
+remote "sudo sh -c 'umask 077; cat > $ETC/cloudflared/creds.json; chown 65532:65532 $ETC/cloudflared/creds.json; chmod 400 $ETC/cloudflared/creds.json'" \
   < "$HOME/.cloudflared/$TUNNEL_ID.json"
 {
   printf 'tunnel: %s\ncredentials-file: /etc/cloudflared/creds.json\ningress:\n' "$TUNNEL_ID"
   for name in "$HOST" "${OLD_HOSTS[@]}"; do printf '  - hostname: %s\n    service: http://gulpy:8080\n' "$name"; done
   printf '  - service: http_status:404\n'
-} | remote "sudo sh -c 'cat > /etc/gulpy/cloudflared/config.yml'"
+} | remote "sudo sh -c 'cat > $ETC/cloudflared/config.yml'"
 
 # 4. The code. The data of this computer and the tests do not go to the server.
 rsync -az --delete -e "ssh -o LogLevel=ERROR" \
@@ -92,9 +111,9 @@ rsync -az --delete -e "ssh -o LogLevel=ERROR" \
   ./ "$VM:$DIR/"
 
 # 5. Build and start.
-remote "cd $DIR && sudo docker compose -f deploy/compose.yml up -d --build --remove-orphans 2>&1 | tail -5"
+remote "cd $DIR && $COMPOSE up -d --build --remove-orphans 2>&1 | tail -5"
 # The tunnel reads its list of host names only at start.
-remote "cd $DIR && sudo docker compose -f deploy/compose.yml restart tunnel 2>&1 | tail -1"
+remote "cd $DIR && $COMPOSE restart tunnel 2>&1 | tail -1"
 
 # 6. Check from the server, through the public address.
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
@@ -105,5 +124,5 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
   fi
   sleep 6
 done
-echo "[deploy] https://$HOST did not answer. See: ssh $VM 'cd $DIR && sudo docker compose -f deploy/compose.yml logs --tail 50'" >&2
+echo "[deploy] https://$HOST did not answer. See: ssh $VM 'cd $DIR && sudo docker compose -p $PROJECT -f deploy/compose.yml logs --tail 50'" >&2
 exit 1

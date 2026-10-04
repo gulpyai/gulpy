@@ -1,17 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import { backendOf, tokensFor } from "../access.ts";
-import {
-  approveAgent,
-  approveWithNoTap,
-  checkAuthorize,
-  findAgent,
-  isTrustedReturn,
-  redirectWith,
-  setAgentAccess,
-  shareWithAgents,
-  type Selection,
-} from "../agents.ts";
+import { setAgentAccess, shareWithAgents } from "../agents.ts";
 import {
   checkCsrf,
   endSession,
@@ -42,19 +32,18 @@ import { randomId, randomToken, sha256 } from "../crypto.ts";
 import type { Deps } from "../deps.ts";
 import { approveLink, findLink, linkChoices, linkStatus, parseOrigin } from "../link.ts";
 import { beginAuthorization, completeAuthorization, OAuthError, type Connected } from "../oauth.ts";
-import { agentChoices, viewCatalog, viewConnection, viewConnections } from "../present.ts";
+import { viewCatalog, viewConnection, viewConnections } from "../present.ts";
 import { beginUpstream, completeUpstream } from "../upstream/oauth.ts";
 import type { Vault } from "../vault.ts";
 import {
-  AgentConsent,
-  AgentDone,
   AgentLimit,
-  AgentSignIn,
   DeviceConsent,
   DeviceDone,
   DeviceEnter,
   DeviceSignIn,
 } from "../views/agent.tsx";
+import { ConnectAll, ConnectAllDone } from "../views/connectall.tsx";
+import type { Connector } from "../catalog.ts";
 import { allowDevice, denyDevice, normalizeUserCode, pendingAgent, tellUser } from "../device.ts";
 import { LinkConsent, LinkDone, LinkLoading, LinkProblem, LinkSignIn } from "../views/link.tsx";
 import type { SignInState } from "../views/signin.tsx";
@@ -101,18 +90,6 @@ const NOTICES: Record<string, string> = {
  */
 const showCode = (deps: Deps): boolean => deps.config.env !== "production" && isLocalAddress(deps.config.baseUrl);
 
-/** The request of an agent, as it arrives at the authorize endpoint. */
-const AUTHORIZE_PARAMS = [
-  "client_id",
-  "redirect_uri",
-  "response_type",
-  "state",
-  "code_challenge",
-  "code_challenge_method",
-  "resource",
-  "scope",
-];
-
 function render(c: Context, page: Child, status: 200 | 400 | 403 | 404 | 502 = 200): Response {
   return c.html(`<!DOCTYPE html>${String(page)}`, status);
 }
@@ -125,13 +102,6 @@ function linkPath(token: string): string {
 function withParam(path: string, name: string, value: string): string {
   const url = new URL(path, "http://local");
   url.searchParams.set(name, value);
-  return url.pathname + url.search;
-}
-
-/** Removes the parameters that one page load adds, so that they do not stay in the address. */
-function withoutParams(path: string, names: string[]): string {
-  const url = new URL(path, "http://local");
-  for (const name of names) url.searchParams.delete(name);
   return url.pathname + url.search;
 }
 
@@ -178,7 +148,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       connectors: real.length,
       meta: deps.config.baseUrl.startsWith("https://")
         ? {
-            description: `Connect your tools to ${BRAND.name} one time. Then each AI agent gets them with one tap: ChatGPT, Claude, Grok and the others.`,
+            description: `Connect your tools to ${BRAND.name} one time. Then any AI agent calls them with plain HTTP.`,
             url: `${deps.config.baseUrl}/`,
             image: `${deps.config.baseUrl}/assets/social.png`,
           }
@@ -197,11 +167,6 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
       const code = normalizeUserCode(next.searchParams.get("code"));
       const agent = code ? pendingAgent(deps, code) : null;
       if (code && agent) return render(c, <DeviceSignIn app={agent} state={state} />, status);
-    }
-    if (next.pathname === "/oauth/authorize") {
-      const agent = await findAgent(deps, next.searchParams.get("client_id") ?? undefined);
-      const noTap = deps.config.autoApprove && isTrustedReturn(next.searchParams.get("redirect_uri") ?? "");
-      if (agent) return render(c, <AgentSignIn app={agent} state={state} noTap={noTap} />, status);
     }
     return render(c, <Landing model={landing(state)} />, status);
   };
@@ -250,6 +215,31 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
 
   // Connect to Gulpy: an agent on the computer of the user (src/device.ts)
 
+  // Connect everything: the extension Gulpy for Chrome does the clicks (src/views/connectall.tsx)
+
+  app.get("/connect-all", async (c) => {
+    const current = viewer(deps, c);
+    if (!current) return signInPage(c, { next: "/connect-all" });
+    const cards = viewCatalog(deps, current.user.id).flatMap((group) => group.cards);
+    const item = (connector: Connector) => ({
+      connector,
+      url: `/connect/${encodeURIComponent(connector.id)}?${new URLSearchParams({ next: "/connect-all/done" })}`,
+    });
+    const ready = cards.filter((card) => card.state === "ready").map((card) => card.connector);
+    return render(
+      c,
+      <ConnectAll
+        viewer={current}
+        // Google and Microsoft keep one tap by the user: their consent pages are theirs to confirm.
+        auto={ready.filter((connector) => connector.source.kind === "mcp").map(item)}
+        tap={ready.filter((connector) => connector.source.kind === "native").map(item)}
+        connected={cards.filter((card) => card.state === "connected").length}
+      />,
+    );
+  });
+
+  app.get("/connect-all/done", (c) => render(c, <ConnectAllDone />));
+
   app.get("/device", (c) => {
     const typed = c.req.query("code");
     if (typed === undefined) return render(c, <DeviceEnter />);
@@ -284,98 +274,6 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
     if (allowDevice(deps, code, current.user.id)) await tellUser(deps, current.user.email, agent.name);
     const logos = viewConnections(deps, current.user.id).map((view) => view.logo);
     return render(c, <DeviceDone name={agent.name} allowed logos={logos} />);
-  });
-
-  // Agents that sign in with standard OAuth
-
-  app.get("/oauth/authorize", async (c) => {
-    const check = await checkAuthorize(deps, c.req.query());
-    if (!check.ok) {
-      if ("redirect" in check) return c.redirect(check.redirect, 303);
-      return render(c, <LinkProblem title="This request is not valid" detail={check.message} />, 400);
-    }
-    const url = new URL(c.req.url);
-    const here = withoutParams(url.pathname + url.search, ["connected", "notice"]);
-    const current = viewer(deps, c);
-    if (!current) {
-      const noTap = deps.config.autoApprove && isTrustedReturn(check.request.redirectUri);
-      return render(c, <AgentSignIn app={check.request.app} state={{ next: here }} noTap={noTap} />);
-    }
-
-    if (!agentAllowed(deps, current.user.id, check.request.app.id)) {
-      return render(c, <AgentLimit name={check.request.app.name} limit={FREE_AGENTS} />);
-    }
-
-    // An agent that Gulpy knows, or a program on this computer, gets the tools with no approval step.
-    const approved = approveWithNoTap(deps, check.request, current.user.id);
-    if (approved) {
-      const logos = approved.connections.flatMap((connection) => viewConnection(deps, connection)?.logo ?? []);
-      return render(c, <AgentDone to={approved.to} name={check.request.app.name} logos={logos} allowed />);
-    }
-
-    const grants = deps.store.grantsForAppUser(check.request.app.id, current.user.id);
-    const params: Record<string, string> = {};
-    for (const name of AUTHORIZE_PARAMS) {
-      const value = c.req.query(name);
-      if (value !== undefined) params[name] = value;
-    }
-    return render(
-      c,
-      <AgentConsent
-        request={check.request}
-        viewer={current}
-        choices={agentChoices(deps, current.user.id, grants, c.req.query("connected"))}
-        catalog={viewCatalog(deps, current.user.id, true)}
-        here={here}
-        params={params}
-        notice={NOTICES[c.req.query("notice") ?? ""]}
-      />,
-    );
-  });
-
-  app.post("/oauth/authorize", async (c) => {
-    const form = await c.req.parseBody({ all: true });
-    const query: Record<string, string> = {};
-    for (const name of AUTHORIZE_PARAMS) if (typeof form[name] === "string") query[name] = form[name];
-    const here = `/oauth/authorize?${new URLSearchParams(query)}`;
-
-    // A plain redirect after a form is stopped by the `form-action` rule of the page, so a page does it.
-    const check = await checkAuthorize(deps, query);
-    if (!check.ok) {
-      if ("redirect" in check) return render(c, <AgentDone to={check.redirect} name="the agent" logos={[]} allowed={false} />);
-      return render(c, <LinkProblem title="This request is not valid" detail={check.message} />, 400);
-    }
-    const current = viewer(deps, c);
-    if (!current) return c.redirect(here, 303);
-    if (!checkCsrf(current, form.csrf)) return c.text("The form expired. Go back and try again.", 403);
-
-    const { request } = check;
-    if (form.decision === "allow" && !agentAllowed(deps, current.user.id, request.app.id)) {
-      return render(c, <AgentLimit name={request.app.name} limit={FREE_AGENTS} />);
-    }
-    if (form.decision !== "allow") {
-      const to = redirectWith(deps, request.redirectUri, {
-        error: "access_denied",
-        error_description: "The user did not approve",
-        state: request.state,
-      });
-      return render(c, <AgentDone to={to} name={request.app.name} logos={[]} allowed={false} />);
-    }
-
-    const owned = new Set(deps.store.connectionsByUser(current.user.id).map((connection) => connection.id));
-    const selections: Selection[] = [form.connection ?? []]
-      .flat()
-      .map(String)
-      .filter((id) => owned.has(id))
-      .map((id) => ({ connectionId: id, level: form[`level:${id}`] === "read" ? "read" : "write" }));
-    if (selections.length === 0) return c.redirect(withParam(here, "notice", "nothing_selected"), 303);
-
-    const chosen = new Set(selections.map((selection) => selection.connectionId));
-    const logos = viewConnections(deps, current.user.id)
-      .filter((view) => chosen.has(view.connection.id))
-      .map((view) => view.logo);
-    const to = approveAgent(deps, request, current.user.id, selections);
-    return render(c, <AgentDone to={to} name={request.app.name} logos={logos} allowed />);
   });
 
   // Link: the window that an agent app opens from its own page
@@ -593,7 +491,7 @@ export function pageRoutes(deps: Deps, vault: Vault): Hono {
         .map((group) => ({ ...group, cards: group.cards.filter((card) => card.state !== "connected") }))
         .filter((group) => group.cards.length > 0),
       agents: [...agents.values()],
-      mcpUrl: `${deps.config.baseUrl}/mcp`,
+      baseUrl: deps.config.baseUrl,
       now,
       // A change that worked shows on the page itself. Only a problem gets a line at the top.
       notice: warnText ? { kind: "warn", text: warnText } : undefined,

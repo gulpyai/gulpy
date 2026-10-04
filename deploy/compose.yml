@@ -1,16 +1,17 @@
 # Gulpy on one server: the app, and a Cloudflare tunnel that gives it a public https address.
-# `scripts/deploy-vm.sh` copies the code to the server and starts this file.
+# `deploy/release.sh` (GitHub Actions) sends a built image and starts this file. `scripts/deploy-vm.sh` set up the server.
 # The secrets are on the server in /etc/gulpy, which only root can read. They are not in this repository.
+# The test copy (test.gulpy.ai) uses the same file with the project gulpy-test, /etc/gulpy-test and its own image.
 name: gulpy
 
 services:
   gulpy:
     build:
       context: ..
-    image: gulpy:latest
+    image: ${GULPY_IMAGE:-gulpy:latest}
     restart: unless-stopped
     # GULPY_BASE_URL, GULPY_MASTER_KEY, RESEND_API_KEY, MAIL_FROM
-    env_file: /etc/gulpy/env
+    env_file: ${GULPY_ETC:-/etc/gulpy}/env
     environment:
       GULPY_BACKUP_DIR: /data/backups
     volumes:
@@ -28,7 +29,7 @@ services:
     restart: unless-stopped
     command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
     volumes:
-      - /etc/gulpy/cloudflared:/etc/cloudflared:ro
+      - ${GULPY_ETC:-/etc/gulpy}/cloudflared:/etc/cloudflared:ro
     depends_on:
       gulpy:
         condition: service_healthy

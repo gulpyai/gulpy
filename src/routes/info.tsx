@@ -26,11 +26,12 @@ function securityText(baseUrl: string, now: number): string {
 export function infoRoutes(deps: Deps): Hono {
   const app = new Hono();
   const { baseUrl } = deps.config;
-  const real = baseUrl.startsWith("https://");
+  // The test copy (test.gulpy.ai) stays out of search engines.
+  const real = baseUrl.startsWith("https://") && !new URL(baseUrl).hostname.startsWith("test.");
 
   const model = (c: Context): InfoModel => ({
     viewer: viewer(deps, c),
-    mcpUrl: `${baseUrl}/mcp`,
+    baseUrl,
     meta: real ? (path, description) => ({ description, url: `${baseUrl}${path}`, image: `${baseUrl}/assets/social.png` }) : undefined,
   });
 
@@ -48,12 +49,15 @@ export function infoRoutes(deps: Deps): Hono {
   app.get("/privacy", (c) => page(c, <Privacy model={model(c)} />));
   app.get("/terms", (c) => page(c, <Terms model={model(c)} />));
 
-  app.get("/.well-known/security.txt", (c) => c.text(securityText(baseUrl, deps.now())));
+  // Set the type here. With no header set, Hono leaves the type to the runtime, and the HSTS middleware then drops it.
+  app.get("/.well-known/security.txt", (c) =>
+    c.text(securityText(baseUrl, deps.now()), 200, { "Content-Type": "text/plain; charset=utf-8" }),
+  );
 
   app.get("/robots.txt", (c) =>
     c.text(
       real
-        ? ["User-agent: *", "Allow: /", "Disallow: /oauth/", "Disallow: /link", "Disallow: /v1/", "Disallow: /mcp", `Sitemap: ${baseUrl}/sitemap.xml`, ""].join("\n")
+        ? ["User-agent: *", "Allow: /", "Disallow: /oauth/", "Disallow: /link", "Disallow: /v1/", `Sitemap: ${baseUrl}/sitemap.xml`, ""].join("\n")
         : "User-agent: *\nDisallow: /\n",
     ),
   );

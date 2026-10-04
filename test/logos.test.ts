@@ -56,7 +56,7 @@ describe("the first page on a real address", () => {
     expect(picture.status).toBe(200);
     expect(picture.headers.get("content-type")).toBe("image/png");
 
-    const approval = await (await world.gulpy.app.request(`${GULPY}/oauth/authorize`)).text();
+    const approval = await (await world.gulpy.app.request(`${GULPY}/device`)).text();
     expect(approval).not.toContain("og:image");
   });
 });

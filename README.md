@@ -2,16 +2,18 @@
 
 One login for all your AI plugins.
 
-ChatGPT, Claude and Grok each have a list of plugins. You connect the same tools
-again in each one. Gulpy is one place for your connections. You add one address
-to each agent, and the agent has your tools. An agent that Gulpy knows needs no
-approval step. See [Approval with no tap](#approval-with-no-tap).
+Each AI agent has its own list of plugins. You connect the same tools again in
+each one. Gulpy is one place for your connections. You say "connect to Gulpy" to
+an agent, tap **Allow** one time, and the agent calls all your tools with plain
+HTTP and one key. Gulpy has no MCP server for agents.
 
 "Plug", read from right to left, is "gulp". The mascot is a plug that eats tools.
 
-| The site | Your tools | A new agent asks |
-|---|---|---|
-| ![Landing](docs/screenshots/01-landing.png) | ![My tools](docs/screenshots/02-my-tools.png) | ![Approval](docs/screenshots/03-approval.png) |
+| The site | Your tools |
+|---|---|
+| ![Landing](docs/screenshots/01-landing.png) | ![My tools](docs/screenshots/02-my-tools.png) |
+
+The screenshots are from before 2026-10-03. The "Add Gulpy to an agent" panel changed since then.
 
 The name is in one file: [src/brand.ts](src/brand.ts). The folder and the key labels keep
 the first name, "connecty".
@@ -27,7 +29,7 @@ bun run dev
 
 | Address | What it is |
 |---|---|
-| http://localhost:4000 | **Gulpy**: the site, your tools, the approval window, the MCP server |
+| http://localhost:4000 | **Gulpy**: the site, your tools, the Allow page, the API for agents |
 | http://localhost:4500 | **Orbit**, an agent to try Gulpy with. It knows the Gulpy address only. |
 | http://localhost:4600 | **Scout**, a second agent |
 
@@ -38,8 +40,8 @@ Do these steps:
 1. Open Gulpy. Sign in with an email address. On this computer no mail goes out, so
    the page fills in the code.
 2. Select **+** on a tool, for example Notion or Linear. You sign in at the provider.
-3. Open Orbit. Select **Connect with Gulpy**. A window opens. Orbit is on this
-   computer, so Gulpy eats the tools and the window closes. You approve nothing.
+3. Open Orbit. Select **Connect with Gulpy**. A Gulpy window opens. Tap **Allow**.
+   Orbit takes its key (the device flow, as in `/agents.md`).
 4. Ask Orbit a question about your tools.
 5. Open Scout. Connect it. Add a new tool in Gulpy: Orbit and Scout get it.
 6. Open Gulpy. You see the agents and each call. Remove the access of one agent.
@@ -73,28 +75,14 @@ Remove the agent on My tools to stop it. The sign-in is the device authorization
 grant (RFC 8628): `POST /device/code`, the page `/device`, `POST /device/token`.
 The one tap stays on purpose: anyone can ask for a code and send you the link.
 
-### ChatGPT, Claude and Grok in the browser: the MCP address
+### An agent that can send web requests but not run commands
 
-Add a custom connector or MCP server with this address:
+It follows case B of `/agents.md`: `POST /device/code`, sends you the link, you tap
+**Allow**, and it collects the key with `POST /device/token`.
 
-```
-http://localhost:4000/mcp
-```
-
-An agent on your computer, such as Claude Code, can reach `localhost`:
-
-```sh
-claude mcp add --transport http gulpy http://localhost:4000/mcp
-```
-
-ChatGPT, Claude on the web and Grok call the connector from their servers. For
-them, Gulpy must have a public `https` address. Set `GULPY_BASE_URL` to it.
-
-| Assistant | Steps |
-|---|---|
-| Claude | Customize, then Connectors. Select "+", then "Add custom connector". Paste the address. |
-| ChatGPT | Settings, then Security and login. Turn on Developer mode. Create an app for a remote MCP server. |
-| Grok | grok.com/connectors. Select New Connector, then Custom. Paste the address. |
+An agent that can do neither (the ChatGPT, Claude and Grok chat apps) cannot use Gulpy.
+Gulpy has no MCP server. For an agent in the cloud, Gulpy needs a public `https`
+address: set `GULPY_BASE_URL` to it.
 
 ## Real connectors
 
@@ -132,70 +120,32 @@ security add-generic-password -a "$USER" -s gulpy-connector-github-client-secret
 ## How it works
 
 ```
-   Agent (Orbit, ChatGPT, Claude, Grok)            Gulpy                      Connector (Notion)
+   Agent (any)                                     Gulpy                      Connector (Notion)
         |                                             |                               |
-        |  1. POST /mcp with no token                 |                               |
+        |  1. POST /device/code                       |                               |
         |-------------------------------------------->|                               |
-        |     401, with the address of the metadata   |                               |
-        |  2. reads the metadata, registers itself    |                               |
-        |-------------------------------------------->|                               |
-        |  3. sends the user to /oauth/authorize      |                               |
-        |        the user selects connections and     |   (first time for a           |
-        |        taps Allow access                    |    connector: the user        |
-        |  4. code -> access token + refresh token    |    signs in at Notion)        |
-        |<--------------------------------------------|------------------------------>|
-        |  5. tools/list, tools/call                  |   tools/call with the token   |
-        |-------------------------------------------->|   of the user                 |
-        |                                             |------------------------------>|
+        |  2. the user opens the link, taps Allow     |                               |
+        |  3. POST /device/token  -> gulpy_... key    |                               |
+        |<--------------------------------------------|                               |
+        |  4. GET /v1/tools, POST /v1/tools/:name     |   the call, with the token    |
+        |     Authorization: Bearer gulpy_...         |   of the user                 |
+        |-------------------------------------------->|------------------------------>|
+        |     { "result": ... } (plain JSON)          |                               |
+        |<--------------------------------------------|<------------------------------|
 ```
 
 Three objects carry the design:
 
 - A **connection** is one account at one connector. It belongs to the user. It holds
   the tokens, encrypted.
-- A **grant** gives one agent access to one connection, as **Read only** or
-  **Read and write**. The user makes it on the approval page and can remove it.
+- A **grant** gives one agent access to one connection. Allow gives each connection, with
+  read and write. A new connection goes to each agent of the user (`GULPY_AUTO_APPROVE`).
 - A **connector** is an entry in the list. It is an MCP server that the provider
   operates, or a provider API for which Gulpy supplies the tools.
 
-The agent never gets the token of a connector. Gulpy reads the grant on each
-call and then makes the call.
-
-This follows the MCP authorization specification: OAuth 2.1 with PKCE, protected
-resource metadata (RFC 9728), server metadata (RFC 8414), dynamic client
-registration (RFC 7591), and client ID metadata documents. The specification
-forbids a server to pass on the token of the agent. It permits a proxy that has
-consent for each client.
-
-With `GULPY_AUTO_APPROVE=off`, Gulpy is that proxy. With the default, Gulpy does
-not obey one rule: the specification says that a proxy MUST get the consent of
-the user for each client
-([security best practices](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices)).
-Gulpy gives the consent for the user if the agent is a known one. The attack that
-the rule prevents needs a return address on the site of the attacker, and such an
-address gets the approval page.
-
-## Approval with no tap
-
-The user connects a tool one time. After that, Gulpy does the approval for the user.
-
-| The agent sends the user back to | What the user does |
-|---|---|
-| A program on the computer of the user (`http://localhost`, `http://127.0.0.1`): Claude Code, Codex | Nothing |
-| The site of an agent company that Gulpy knows: `claude.ai`, `claude.com`, `chatgpt.com`, `chat.openai.com`, `grok.com`, `x.ai`, and `cursor://` | Nothing |
-| A different site | One tap on **Allow**, one time |
-
-- A new agent gets each connection that works, with read and write access.
-- A new connection goes to each agent that the user has. An agent that has read access only gets read access.
-- An agent that connects again keeps what it has.
-- A person who is not signed in to Gulpy signs in first, with an email code.
-- The list of calls shows each automatic approval.
-
-A site that Gulpy does not know keeps the approval page for a reason. Each agent can
-register itself. With no approval page, one link to a bad site gives that site the tools
-of each person who is signed in. The return address is the proof, not the name of the agent.
-
-Set `GULPY_AUTO_APPROVE=off` and the user approves each agent, as before.
+The agent never gets the token of a connector. Gulpy reads the grant on each call and
+then makes the call. Many providers offer their tools only as an MCP server. Gulpy talks
+to those servers itself, in `src/upstream/`. The agent sees only plain JSON.
 
 ## Link: connect from your own page
 
@@ -261,7 +211,7 @@ All paths start with `/v1`. Errors have the shape `{ "error": { "code", "message
 | `RESEND_API_KEY`, `MAIL_FROM` | not set | Sends sign-in codes by email. Necessary in production. |
 | `GULPY_RAW_PROXY` | none | Provider ids for which `/v1/proxy` is on. Keep Google and Microsoft out. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | not set | Paid plans through Stripe. See [Paid plans](#paid-plans). Without them, each person is on Free. |
-| `GULPY_AUTO_APPROVE` | on | `off`: the user approves each agent. See [Approval with no tap](#approval-with-no-tap). |
+| `GULPY_AUTO_APPROVE` | on | `off`: a new connection does not go to the agents that the user has already. |
 | `GULPY_BACKUP_DIR` | not set | Gulpy writes a copy of the database to this folder each day and keeps 14 copies. |
 
 In development on macOS, each secret can also sit in the Keychain: `gulpy-stripe-secret-key`, `gulpy-stripe-webhook-secret`, and the same pattern for the provider credentials.
@@ -285,15 +235,12 @@ What a plan changes: a person on Free keeps 7 days of calls in the activity list
 |---|---|
 | The database is stolen | Tokens and client registrations are encrypted with AES-256-GCM. Each value is bound to its row. Secrets of apps, access tokens, refresh tokens and session IDs are stored as hashes only. |
 | A fault gives the row of one user to a different user | Each user has a vault key of their own. It comes from the master key and the id of the user. The token of one user does not open with the key of a different user. |
-| A link makes the browser of a user approve an agent | Gulpy approves with no tap only if the code goes to the computer of the user or to the site of a known agent company. A different site gets the approval page. |
-| An agent does more than the user approved | The agent never gets the token of a connector. Gulpy reads the grant on each call. Read access gives only the tools that say that they only read. |
-| A false agent asks for access | The approval page shows where the agent returns the user to, and says that the agent is not verified. Gulpy redirects only to a registered address. |
-| A copy of a refresh token | A refresh token works one time. A second use cancels all tokens of that sign-in. |
-| A stolen authorization code | PKCE with S256 is necessary. A code works one time, for 5 minutes. |
-| A client metadata address that points to the internal network | Gulpy refuses IP addresses and `localhost`. In production it also resolves the name and refuses private addresses. It follows no redirect. |
+| Someone sends the user a connect link | The user must tap **Allow**. Gulpy then emails the user ("Not you? Remove it"). A link works one time, for 10 minutes. |
+| An agent gets a provider token | The agent never gets the token of a connector. Gulpy reads the grant on each call. |
+| A key leaks | A key reaches all the tools of the user. Gulpy stores only its hash. The user removes the agent to stop it. Each call is on the dashboard. |
 | A page on a different site submits a form | Gulpy checks `Sec-Fetch-Site`, and each form has a secret field. Cookies are `SameSite=Lax` and `HttpOnly`. |
 | An attacker signs the victim in to the attacker's account | A sign-in code works only in the browser that asked for it. A provider callback works only in the session that started it. |
-| A hidden frame gets a click on **Allow access** | Pages forbid frames (`frame-ancestors 'none'`). |
+| A hidden frame gets a click on **Allow** | Pages forbid frames (`frame-ancestors 'none'`). |
 | Two apps compare their users | Each Link app sees a different user ID for the same person. |
 | The user wants to know what happened | The dashboard shows each call. It records the tool and the result, not the content. |
 
@@ -301,13 +248,8 @@ Known gaps:
 
 - **Tool descriptions come from the connector and go to the AI model.** A bad connector
   can put instructions in them. Gulpy limits the length. It does not inspect the text.
-- The agents that register automatically are not verified. Gulpy has no list of
-  known agents yet.
+- A key has no scopes and does not expire. Anyone with the key has all the tools.
 - No rate limits. One server process only: the refresh lock is in memory.
-- With automatic approval, the user does not see which agent connects. If a known agent
-  company does not bind its sign-in to the browser session of the user, a link can
-  connect the tools of the user to the account of a different person at that company.
-  Gulpy did not test the agent companies for this.
 - The copies of the database are on the disk of the server. A copy in a different place is not made.
 
 ## Logos
@@ -320,9 +262,7 @@ Each connector and each agent shows the logo of its company. The images are in
 ~/.local/py/bin/python scripts/fetch-logos.py slack    # gets one
 ```
 
-An agent gives its own name, so the name is not proof. The approval window shows the
-logo of Claude, ChatGPT, Grok or Cursor only if each return address of the agent is on
-the site of that company.
+An agent gives its own name, so the name is not proof.
 
 ## Project layout
 
@@ -330,7 +270,10 @@ the site of that company.
 src/
   catalog.ts        the list of connectors
   logos.ts          the logo images, and the rule for the logo of an agent
-  agents.ts         Gulpy as an OAuth server for agents
+  device.ts         "connect to Gulpy": the device flow that gives an agent its key
+  agents.ts         gives a new connection to the agents of the user
+  tools.ts          the tools that agents call: GET /v1/tools, POST /v1/tools/:name
+  guide.ts          /agents.md and /connect.sh
   upstream/         Gulpy as a client of an upstream MCP server
   service.ts        tools, mail, calendar and proxy operations
   vault.ts          token encryption and refresh, with one key for each user
@@ -339,7 +282,7 @@ src/
   link.ts           Link: tokens, account choices, approval
   oauth.ts          sign-in at a provider that has its own API
   providers/        google.ts, microsoft.ts
-  routes/           pages.tsx, info.tsx (support, security, privacy, terms), oauth.ts, mcp.ts, api.ts, billing.ts (the Stripe webhook)
+  routes/           pages.tsx, info.tsx (support, security, privacy, terms), connect.ts (device flow, guide), api.ts, billing.ts (the Stripe webhook)
   billing.ts        paid plans: the Stripe checkout, the webhook events, the customer portal
   views/            the pages
 examples/
@@ -352,6 +295,18 @@ test/               end-to-end tests. They use no network.
   fixtures/         a mail provider and MCP connectors for the tests only
 ```
 
+## Releases
+
+| | test.gulpy.ai | app.gulpy.ai |
+|---|---|---|
+| How | Merge a pull request to `main` | Publish a GitHub release with a tag `v*` (for example `v2026.10.03`) on a commit of `main` |
+| Checks first | CI (typecheck, tests, Docker image starts) | CI, then a reviewer approves the `production` environment |
+| Data | Its own database and Stripe TEST keys | The real database and Stripe LIVE keys |
+
+Pull requests run CI only. To send any branch to test, or to roll back production to an older tag: Actions > Deploy > Run workflow.
+`deploy/release.sh` sends the image built by CI to the server and starts it. If the new copy does not answer, it starts the previous one again.
+The secrets of the app stay on the server. GitHub holds only a deploy SSH key.
+
 ## Tests
 
 ```sh
@@ -363,11 +318,11 @@ bun run typecheck
 
 Verified:
 
-- The full flow: 122 automated tests, and runs in a real browser (Chromium) with the
+- The full flow: 136 automated tests, and runs in a real browser (Chromium) with the
   pop-up window. The tests use a mail provider and connectors that exist for the tests only.
 - A real AI agent: Claude answered questions with tools that came through Gulpy.
-- The agent side, with the official MCP SDK as the agent: discovery, registration,
-  sign-in, token refresh, tool calls.
+- The agent side: the device flow, keys, `GET /v1/tools` and `POST /v1/tools/:name`,
+  in the tests and live with Orbit on 2026-10-03.
 - The registration of Gulpy at 24 real connectors. Their sign-in pages show the name "Gulpy".
 
 - Gulpy in production mode with the real address setting (`https://gulpy.ai`).
@@ -383,7 +338,6 @@ Not verified:
 - The Google and Microsoft adapters did not run against the real services. They show **Beta**.
 - Google Drive and OneDrive give text for Google Docs, Sheets (first sheet), Slides and text files only.
   Word, Excel, PowerPoint and PDF files give a link and no text.
-- ChatGPT, Claude and Grok as the agent. They need a public `https` address.
 - Mail to a real person. The `ResendMailer` sent one message to the test mailbox of Resend (HTTP 200).
 
 Not built yet:

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Gulpy",
+  "version": "0.1.0",
+  "description": "Connect all the apps you already use to Gulpy with one click.",
+  "icons": { "128": "icon.png" },
+  "permissions": ["tabs", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://app.gulpy.ai/connect-all*", "http://localhost/connect-all*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

@@ -34,6 +34,8 @@ export interface MockMcpOptions {
   accessTtlSeconds?: number;
   /** False: the server gives no `readOnlyHint`, as some real servers do. */
   annotate?: boolean;
+  /** True: the user is not signed in, so the authorize page asks for a password. */
+  signedOut?: boolean;
   now?: () => number;
 }
 
@@ -219,6 +221,11 @@ export function createMockMcp(options: MockMcpOptions): MockMcp {
     if (!request.trusted || !request.client) return c.text(`${options.name} does not know this app or this redirect address`, 400);
     const { params } = request;
     if (!request.valid) return back(c, params.redirect_uri ?? "", { error: "invalid_request", state: params.state });
+    if (options.signedOut) {
+      return c.html(
+        `<!DOCTYPE html><title>Sign in · ${options.name}</title><h1>Sign in to ${options.name}</h1><form><input type="email" name="email"><input type="password" name="password"><button>Continue</button></form>`,
+      );
+    }
     return c.html(
       `<!DOCTYPE html>${String(<AuthorizePage name={options.name} client={request.client.name} params={params} />)}`,
     );

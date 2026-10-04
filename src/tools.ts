@@ -1,5 +1,5 @@
 /**
- * The tools of Gulpy, for both ways in: MCP (`/mcp`) and plain HTTP
+ * The tools of Gulpy, with plain HTTP and JSON
  * (`GET /v1/tools`, `POST /v1/tools/:name`). Some tools are Gulpy's own, for
  * mail, calendar and files. The others belong to the connectors of the user.
  */
@@ -201,6 +201,24 @@ export interface ToolInfo {
   read_only: boolean;
 }
 
+/**
+ * The result of a connector tool, as plain JSON. A connector answers with
+ * blocks of text. When the text is JSON, the agent gets the parsed value.
+ */
+function plain(result: CallToolResult): unknown {
+  if (result.structuredContent) return result.structuredContent;
+  const texts = result.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+  const joined = texts.join("\n");
+  if (texts.length === 1) {
+    try {
+      return JSON.parse(joined);
+    } catch {
+      // Plain text.
+    }
+  }
+  return texts.length === result.content.length ? { text: joined } : { content: result.content };
+}
+
 /** The tools of one agent, with plain HTTP and JSON. */
 export class Tools {
   private readonly own: OwnTool[];
@@ -228,7 +246,7 @@ export class Tools {
     return [...own, ...upstream];
   }
 
-  /** Runs one tool. Gulpy's own tools return their JSON; a connector tool returns its MCP result. */
+  /** Runs one tool and returns plain JSON. */
   async call(access: Access, name: string, args: Record<string, unknown>): Promise<unknown> {
     const mine = this.own.find((item) => item.tool.name === name);
     if (mine) {
@@ -243,6 +261,6 @@ export class Tools {
       const text = result.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
       throw new ApiError(502, "tool_error", text || `The tool "${name}" returned an error`);
     }
-    return result.structuredContent ?? result.content;
+    return plain(result);
   }
 }
