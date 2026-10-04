@@ -1,14 +1,10 @@
 name: CI
 
+# Pull requests run this directly. Deploy runs it first through workflow_call.
 on:
   pull_request:
-  push:
-    branches: [main, "release-*"]
+  workflow_call:
   workflow_dispatch:
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
